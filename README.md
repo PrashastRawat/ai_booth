@@ -7,7 +7,8 @@ virtual line in the entry direction. Each entry is sent to the Next.js app,
 stored in SQLite, and shown on a live dashboard.
 
 ```
-camera A -> thread A \n                      worker/entry_counter.py --POST--> Next.js /api/events --> data/entries.db
+camera A -> thread A \
+                      worker/entry_counter.py --POST--> Next.js /api/events --> data/entries.db
 camera B -> thread B /          |                                   ^
                                 +-- MJPEG :8765/stream/<A|B> <-- dashboard -- GET /api/stats
 ```
