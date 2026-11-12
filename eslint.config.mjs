@@ -12,6 +12,8 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
+    // Python worker (its virtualenv contains third-party JS).
+    "worker/**",
   ]),
 ]);
 

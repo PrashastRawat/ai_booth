@@ -39,3 +39,15 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# runtime data (SQLite database)
+/data/
+
+# python worker
+worker/.venv/
+worker/__pycache__/
+worker/*.pt
+worker/.*.part
+worker/diagnostics/
+worker/*.mp4
+worker/*.avi

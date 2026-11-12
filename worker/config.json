@@ -1,0 +1,18 @@
+{
+  "camera_index": 1,
+  "camera_width": 1280,
+  "camera_height": 720,
+  "model": "yolo11n.pt",
+  "confidence": 0.4,
+  "imgsz": 480,
+  "tracker": "bytetrack_event.yaml",
+  "line": [0.1, 0.6, 0.9, 0.6],
+  "entry_side": "positive",
+  "line_margin_px": 8,
+  "min_track_frames": 3,
+  "api_url": "http://localhost:3000/api",
+  "preview_port": 8765,
+  "preview_fps": 10,
+  "preview_jpeg_quality": 70,
+  "heartbeat_seconds": 1.0
+}
