@@ -38,7 +38,7 @@ cd ..
 Download the YuNet face model (~230 KB) once:
 
 ```powershell
-curl.exe -L -o worker\modelsace_detection_yunet_2023mar.onnx https://github.com/opencv/opencv_zoo/raw/main/models/face_detection_yunet/face_detection_yunet_2023mar.onnx
+curl.exe -L -o worker\models\face_detection_yunet_2023mar.onnx https://github.com/opencv/opencv_zoo/raw/main/models/face_detection_yunet/face_detection_yunet_2023mar.onnx
 ```
 
 ## Running (two terminals)
