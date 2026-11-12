@@ -1,0 +1,14 @@
+# ByteTrack settings for the entrance counter.
+# Based on the Ultralytics default bytetrack.yaml; only track_buffer is changed.
+# Docs: https://docs.ultralytics.com/modes/track
+
+tracker_type: bytetrack
+track_high_thresh: 0.25
+track_low_thresh: 0.1
+new_track_thresh: 0.25
+# Keep lost tracks alive for ~60 frames (a few seconds) so a person briefly hidden
+# behind someone else keeps the same ID instead of being counted again.
+# Raise if you see double counts after occlusions; lower if IDs get swapped.
+track_buffer: 60
+match_thresh: 0.8
+fuse_score: True

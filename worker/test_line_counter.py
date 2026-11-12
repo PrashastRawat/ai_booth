@@ -73,6 +73,33 @@ class LineCounterTests(unittest.TestCase):
         ys = [300, 600, 650]
         self.assertEqual(sum(self.walk(c, 1, ys)), 0)
 
+    def test_track_born_just_outside_line_needs_outside_frames(self):
+        # An ID that appears one frame outside and immediately crosses is a
+        # likely ID switch near the line: require min_outside_frames first.
+        c = make_counter(min_track_frames=1, min_outside_frames=3)
+        self.assertEqual(sum(self.walk(c, 1, [480, 520, 600, 650])), 0)
+        c2 = make_counter(min_track_frames=1, min_outside_frames=3)
+        self.assertEqual(sum(self.walk(c2, 2, [300, 400, 480, 520, 600])), 1)
+
+    def test_approach_then_turn_back_does_not_count(self):
+        c = make_counter()
+        self.assertEqual(sum(self.walk(c, 1, [200, 300, 400, 450, 480, 450, 400, 300])), 0)
+
+    def test_parallel_movement_does_not_count(self):
+        c = make_counter()
+        ys = [400] * 10
+        results = [c.update(1, (100 + i * 80, y), i) for i, y in enumerate(ys)]
+        self.assertEqual(sum(results), 0)
+
+    def test_person_already_inside_is_never_counted(self):
+        c = make_counter()
+        self.assertEqual(sum(self.walk(c, 1, [600, 650, 700, 650, 600, 700])), 0)
+
+    def test_enter_then_leave_counts_only_entry(self):
+        c = make_counter()
+        ys = [300, 400, 450, 520, 600, 700, 600, 520, 450, 400, 300]
+        self.assertEqual(sum(self.walk(c, 1, ys)), 1)
+
     def test_signed_distance_and_anchor(self):
         c = make_counter()
         self.assertAlmostEqual(c.signed_distance((500, 600)), 100.0)

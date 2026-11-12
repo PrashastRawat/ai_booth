@@ -1,9 +1,9 @@
 # Entrance counter
 
 Counts people entering an event through one or two USB webcams (one per
-entrance). A Python worker detects faces (OpenCV YuNet), tracks them
-(ByteTrack) and counts each tracked face once when its centre crosses a
-virtual line in the entry direction. Each entry is sent to the Next.js app,
+entrance). A Python worker detects people (YOLO11 nano, person class only),
+tracks them (ByteTrack) and counts each tracked person once when the
+bottom-centre of their box crosses a virtual line in the entry direction. Each entry is sent to the Next.js app,
 stored in SQLite, and shown on a live dashboard.
 
 ```
@@ -13,10 +13,9 @@ camera B -> thread B /          |                                   ^
                                 +-- MJPEG :8765/stream/<A|B> <-- dashboard -- GET /api/stats
 ```
 
-No cloud services, auth, Docker or Redis. No video is recorded, no face images,
-landmarks or embeddings are stored and no identities are recognised; the
-database only stores an event ID, a timestamp, the camera name and a
-temporary tracker ID.
+No cloud services, auth, Docker or Redis. No video is recorded, no images or
+biometric data are stored and no identities are recognised; the database only
+stores an event ID, a timestamp, the camera name and a temporary tracker ID.
 
 ## Requirements
 
@@ -35,11 +34,8 @@ pip install -r requirements.txt
 cd ..
 ```
 
-Download the YuNet face model (~230 KB) once:
-
-```powershell
-curl.exe -L -o worker\models\face_detection_yunet_2023mar.onnx https://github.com/opencv/opencv_zoo/raw/main/models/face_detection_yunet/face_detection_yunet_2023mar.onnx
-```
+The YOLO weights (`yolo11n.pt`, ~5 MB) download automatically the first time
+the worker runs.
 
 ## Running (two terminals)
 
@@ -69,8 +65,9 @@ Press `Ctrl+C` to stop the worker. A camera that is unplugged is retried every
 
 ## Configuration – `worker/config.json`
 
-Global keys: `api_url`, `preview_port`, `heartbeat_seconds`, `face_model`,
-`black_frame_threshold`, `stalled_read_seconds`.
+Global keys: `api_url`, `preview_port`, `heartbeat_seconds`, `model`,
+`tracker` (ByteTrack settings file), `black_frame_threshold`,
+`stalled_read_seconds`.
 
 Each entry in `cameras` describes one entrance:
 
@@ -79,13 +76,14 @@ Each entry in `cameras` describes one entrance:
 | `name` | Short label (`A`, `B`). Used in the database, API and dashboard. |
 | `index` | Webcam index. Run `python camera_diag.py` (with the worker stopped) to see which index is which camera. |
 | `capture_width`, `capture_height` | Requested capture size. The camera falls back to its nearest supported size. |
-| `inference_width` | Frames wider than this are downscaled before face detection. Independent of capture size; 640 is a good CPU default, use more for a far-away camera. |
-| `confidence` | Minimum face confidence (0–1) to start/keep a track. |
+| `inference_size` | YOLO input size, independent of capture size. 480 is a good CPU default; 640 detects smaller/further people at lower FPS. |
+| `confidence` | Minimum person-detection confidence (0–1). |
 | `line` | Counting line as `[x1, y1, x2, y2]`, fractions of the frame. |
 | `entry_side` | `"positive"` or `"negative"`. Flip if the green **ENTRY** arrow points the wrong way. |
-| `line_margin_px` | Dead zone around the line so a face hovering on it does not flicker across. |
-| `min_track_frames` | A face must be tracked this many frames before it can count. |
-| `track_buffer` | Frames a lost face is kept alive (handles brief occlusions). |
+| `line_margin_px` | Dead zone around the line so a person standing on it does not flicker across. |
+| `min_track_frames` | A person must be tracked this many frames before they can count. |
+| `min_outside_frames` | A person must be seen clearly on the outside side this many frames before a crossing counts (rejects IDs that appear on the line). |
+| `roi` | Optional polygon of `[x, y]` fractions, e.g. `[[0.2,0.3],[0.8,0.3],[0.9,1],[0.1,1]]`. Only people whose crossing point is inside it are considered; use it to ignore foot traffic that walks past the entrance. `null` = whole frame. |
 
 Restart the worker after changing the config.
 
@@ -94,10 +92,10 @@ Restart the worker after changing the config.
 1. Start both processes and open the dashboard.
 2. Look at the preview: the yellow line is the counting line, the green arrow
    shows the entry direction.
-3. Place the line across the doorway so every face must cross it; the **centre
-   of the face box** (red dot) is the point that is counted. For a face-level
-   camera a horizontal line works; for a far camera looking along a corridor a
-   line across the walking path works.
+3. Place the line across the doorway so people must cross it fully, and so
+   their **feet** (red dot under each box) cross it — the bottom-centre of the
+   box is what is counted, not the head or the box edge. Boxes drawn grey are
+   outside the ROI and ignored.
 4. If the arrow points out of the venue instead of in, set `entry_side` to the
    other value.
 5. Walk through a few times and check that *Total people entered* goes up once
@@ -120,7 +118,6 @@ placement, lighting and crowd density; dense crowds will be undercounted.
 
 ## Licensing
 
-The ByteTrack implementation comes from the Ultralytics package, which is
-**AGPL-3.0**. That is fine for internal use, but check
-https://www.ultralytics.com/license before distributing this to third parties
-or offering it as a commercial product. YuNet (OpenCV Zoo) is Apache-2.0.
+Ultralytics (YOLO11, ByteTrack implementation) is **AGPL-3.0**. That is fine for
+internal use, but check https://www.ultralytics.com/license before distributing
+this to third parties or offering it as a commercial product.

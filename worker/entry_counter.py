@@ -1,8 +1,8 @@
 """Multi-camera entrance counter worker.
 
-Per camera (own thread): webcam (OpenCV) -> YuNet face detection -> ByteTrack
--> virtual counting line (entry direction only, face-box centre as the point)
--> POST each entry to the Next.js API. One local MJPEG preview server exposes
+Per camera (own thread): webcam (OpenCV) -> YOLO nano person detection ->
+ByteTrack -> virtual counting line (entry direction only, bottom-centre of the
+person box as the point) -> POST each entry to the Next.js API. One local MJPEG preview server exposes
 /stream/<camera> and /snapshot/<camera> for the dashboard.
 
     python entry_counter.py                      # all cameras in config.json
@@ -10,8 +10,8 @@ Per camera (own thread): webcam (OpenCV) -> YuNet face detection -> ByteTrack
     python entry_counter.py --source A=video.mp4 # replace camera A's input with a file (testing)
     python entry_counter.py --show-window        # also open local OpenCV windows
 
-No video is recorded, no face images/embeddings are stored, no identities are
-recognised.
+No video is recorded, no images or biometric data are stored, no identities
+are recognised.
 """
 
 from __future__ import annotations
@@ -32,9 +32,10 @@ from pathlib import Path
 from typing import Dict, Optional
 
 import cv2
+import numpy as np
 
-from face_tracker import FaceDetector, FaceTracker
 from line_counter import LineCounter
+from person_tracker import PersonTracker
 
 WORKER_DIR = Path(__file__).resolve().parent
 CONFIG_PATH = WORKER_DIR / "config.json"
@@ -45,20 +46,22 @@ GLOBAL_DEFAULTS = {
     "preview_fps": 10,
     "preview_jpeg_quality": 70,
     "heartbeat_seconds": 1.0,
-    "face_model": "models/face_detection_yunet_2023mar.onnx",
+    "model": "yolo11n.pt",
+    "tracker": "bytetrack_event.yaml",
     "black_frame_threshold": 8.0,
     "stalled_read_seconds": 1.5,
 }
 CAMERA_DEFAULTS = {
     "capture_width": 1280,
     "capture_height": 720,
-    "inference_width": 640,
-    "confidence": 0.7,
+    "inference_size": 480,
+    "confidence": 0.4,
     "line": [0.1, 0.6, 0.9, 0.6],
     "entry_side": "positive",
     "line_margin_px": 8,
     "min_track_frames": 3,
-    "track_buffer": 60,
+    "min_outside_frames": 2,
+    "roi": None,
 }
 
 log = logging.getLogger("entry_counter")
@@ -259,11 +262,28 @@ def build_counter(cam: dict, frame_w: int, frame_h: int) -> LineCounter:
     x1, y1, x2, y2 = cam["line"]
     return LineCounter(
         (x1 * frame_w, y1 * frame_h), (x2 * frame_w, y2 * frame_h),
-        entry_side=cam["entry_side"], margin_px=cam["line_margin_px"], min_track_frames=cam["min_track_frames"],
+        entry_side=cam["entry_side"], margin_px=cam["line_margin_px"],
+        min_track_frames=cam["min_track_frames"], min_outside_frames=cam["min_outside_frames"],
     )
 
 
-def annotate(frame, name: str, counter: LineCounter, tracks, session_entries: int, fps: float):
+def build_roi(cam: dict, frame_w: int, frame_h: int):
+    """Optional polygon (fractions of the frame) that a crossing point must be inside to count."""
+    roi = cam.get("roi")
+    if not roi:
+        return None
+    if len(roi) < 3:
+        raise SystemExit(f"camera {cam['name']}: roi needs at least 3 points")
+    return np.array([[int(x * frame_w), int(y * frame_h)] for x, y in roi], dtype=np.int32)
+
+
+def in_roi(roi, point) -> bool:
+    return roi is None or cv2.pointPolygonTest(roi, (float(point[0]), float(point[1])), False) >= 0
+
+
+def annotate(frame, name: str, counter: LineCounter, roi, tracks, session_entries: int, fps: float):
+    if roi is not None:
+        cv2.polylines(frame, [roi], isClosed=True, color=(255, 128, 0), thickness=2)
     p1 = tuple(int(v) for v in counter.p1)
     p2 = tuple(int(v) for v in counter.p2)
     cv2.line(frame, p1, p2, (0, 255, 255), 2)
@@ -272,9 +292,11 @@ def annotate(frame, name: str, counter: LineCounter, tracks, session_entries: in
     cv2.putText(frame, "ENTRY", (int(ax) + 6, int(ay)), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
 
     for x1, y1, x2, y2, tid in tracks:
-        color = (255, 200, 0) if counter.has_counted(tid) else (200, 200, 200)
+        foot = (int((x1 + x2) / 2), int(y2))
+        counted = counter.has_counted(tid)
+        color = (255, 200, 0) if counted else ((200, 200, 200) if in_roi(roi, foot) else (90, 90, 90))
         cv2.rectangle(frame, (int(x1), int(y1)), (int(x2), int(y2)), color, 2)
-        cv2.circle(frame, (int((x1 + x2) / 2), int((y1 + y2) / 2)), 4, (0, 0, 255), -1)
+        cv2.circle(frame, foot, 5, (0, 0, 255), -1)  # bottom-centre = crossing point
         cv2.putText(frame, f"ID {tid}", (int(x1), int(y1) - 6), cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 2)
 
     cv2.putText(frame, f"Camera {name}   entries: {session_entries}   FPS: {fps:.1f}", (12, 30),
@@ -301,11 +323,12 @@ class CameraWorker(threading.Thread):
 
     def run(self) -> None:
         name, cam, cfg, state = self.cam["name"], self.cam, self.cfg, self.state
-        detector = FaceDetector(str(WORKER_DIR / cfg["face_model"]), min(0.3, float(cam["confidence"])), cam["inference_width"])
-        tracker = FaceTracker(cam["confidence"], cam["track_buffer"])
+        tracker = PersonTracker(str(WORKER_DIR / cfg["model"]), str(WORKER_DIR / cfg["tracker"]),
+                                cam["confidence"], cam["inference_size"])
         is_file = isinstance(self.source, str)
         cap = None
         counter: Optional[LineCounter] = None
+        roi = None
         last_open_attempt = 0.0
         frame_index = 0
         fps_ema = 0.0
@@ -341,6 +364,7 @@ class CameraWorker(threading.Thread):
                 frame_h, frame_w = frame.shape[:2]
                 if counter is None:
                     counter = build_counter(cam, frame_w, frame_h)
+                    roi = build_roi(cam, frame_w, frame_h)
 
                 problem = frame_problem(frame, read_seconds, cfg)
                 with state.lock:
@@ -361,10 +385,12 @@ class CameraWorker(threading.Thread):
                     log.info("[%s] camera feed restored", name)
 
                 started = time.perf_counter()
-                tracks = tracker.update(detector.detect(frame))
+                tracks = tracker.update(frame)
                 for x1, y1, x2, y2, tid in tracks:
-                    centre = ((x1 + x2) / 2, (y1 + y2) / 2)
-                    if counter.update(tid, centre, frame_index):
+                    foot = ((x1 + x2) / 2, y2)          # bottom-centre = where the person stands
+                    if not in_roi(roi, foot):
+                        continue                         # unrelated foot traffic outside the entrance area
+                    if counter.update(tid, foot, frame_index):
                         self.api.send_entry({"id": str(uuid.uuid4()), "occurredAt": utc_now_iso(), "camera": name, "trackId": tid})
                         with state.lock:
                             state.session_entries += 1
@@ -377,7 +403,7 @@ class CameraWorker(threading.Thread):
                     state.fps = fps_ema
                     session_entries = state.session_entries
 
-                annotated = annotate(frame.copy(), name, counter, tracks, session_entries, fps_ema)
+                annotated = annotate(frame.copy(), name, counter, roi, tracks, session_entries, fps_ema)
                 self._publish(annotated)
                 if self.show_window:
                     cv2.imshow(window, annotated)

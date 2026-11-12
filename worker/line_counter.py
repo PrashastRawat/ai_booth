@@ -29,6 +29,7 @@ class _TrackState:
     frames_seen: int = 0     # observations received for this track
     last_frame: int = 0      # frame index of the most recent observation
     counted: bool = False    # True once this track has produced an entry
+    outside_frames: int = 0  # observations clearly on the non-entry side
 
 
 class LineCounter:
@@ -40,6 +41,7 @@ class LineCounter:
         margin_px: float = 8.0,
         min_track_frames: int = 3,
         forget_after_frames: int = 300,
+        min_outside_frames: int = 2,
     ) -> None:
         if entry_side not in ("positive", "negative"):
             raise ValueError("entry_side must be 'positive' or 'negative'")
@@ -52,6 +54,7 @@ class LineCounter:
         self.p2 = p2
         self.margin_px = margin_px
         self.min_track_frames = min_track_frames
+        self.min_outside_frames = min_outside_frames
         self.forget_after_frames = forget_after_frames
         self._length = length
         # Unit normal pointing to the positive side.
@@ -99,10 +102,13 @@ class LineCounter:
             and new_side != state.side     # it actually crossed
             and new_side == self._entry_sign
             and state.frames_seen >= self.min_track_frames
+            and state.outside_frames >= self.min_outside_frames  # was clearly outside, not an ID born on the line
         ):
             state.counted = True           # never count this track ID again
             self.total_entries += 1
             entered = True
+        if new_side != self._entry_sign:
+            state.outside_frames += 1
         state.side = new_side
         return entered
 
