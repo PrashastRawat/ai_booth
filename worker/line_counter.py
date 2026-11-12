@@ -23,6 +23,11 @@ from typing import Dict, Tuple
 Point = Tuple[float, float]
 
 
+def box_centre(x1: float, y1: float, x2: float, y2: float) -> Point:
+    """The crossing point for a tracked person: the centre of their bounding box."""
+    return ((x1 + x2) / 2, (y1 + y2) / 2)
+
+
 @dataclass
 class _TrackState:
     side: int = 0            # last confidently observed side: -1, +1, or 0 (unknown)

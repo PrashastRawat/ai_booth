@@ -2,7 +2,7 @@
 
 import unittest
 
-from line_counter import LineCounter
+from line_counter import LineCounter, box_centre
 
 # Horizontal line across a 1000px-wide image at y=500.
 # With entry_side="positive", the normal (y1-y2, x2-x1) = (0, 1000)/1000 = (0, 1),
@@ -99,6 +99,26 @@ class LineCounterTests(unittest.TestCase):
         c = make_counter()
         ys = [300, 400, 450, 520, 600, 700, 600, 520, 450, 400, 300]
         self.assertEqual(sum(self.walk(c, 1, ys)), 1)
+
+    def test_box_centre_is_middle_of_box_not_feet(self):
+        self.assertEqual(box_centre(100, 200, 300, 600), (200.0, 400.0))
+        self.assertNotEqual(box_centre(100, 200, 300, 600)[1], 600)  # y2 would be the foot point
+
+    def test_box_growing_while_centre_stays_outside_does_not_count(self):
+        # Partially visible person: the box bottom extends past the line as the
+        # box grows, but the body centre stays on the outside side -> no count.
+        c = make_counter()
+        boxes = [(400, 100, 600, 300), (400, 100, 600, 400), (400, 100, 600, 560),
+                 (400, 100, 600, 700), (400, 100, 600, 800)]  # y2 crosses 500 from frame 3
+        results = [c.update(1, box_centre(*b), i) for i, b in enumerate(boxes)]
+        self.assertEqual(sum(results), 0)
+        self.assertLess(box_centre(*boxes[-1])[1], 500)  # centre still above the line
+
+    def test_box_centre_crossing_counts(self):
+        c = make_counter()
+        boxes = [(400, 100 + d, 600, 300 + d) for d in (0, 100, 200, 300, 400, 500)]  # centre 200 -> 700
+        results = [c.update(1, box_centre(*b), i) for i, b in enumerate(boxes)]
+        self.assertEqual(sum(results), 1)
 
     def test_signed_distance_and_anchor(self):
         c = make_counter()

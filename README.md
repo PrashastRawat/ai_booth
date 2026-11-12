@@ -3,7 +3,7 @@
 Counts people entering an event through one or two USB webcams (one per
 entrance). A Python worker detects people (YOLO11 nano, person class only),
 tracks them (ByteTrack) and counts each tracked person once when the
-bottom-centre of their box crosses a virtual line in the entry direction. Each entry is sent to the Next.js app,
+centre of their bounding box crosses a virtual line in the entry direction. Each entry is sent to the Next.js app,
 stored in SQLite, and shown on a live dashboard.
 
 ```
@@ -93,9 +93,9 @@ Restart the worker after changing the config.
 2. Look at the preview: the yellow line is the counting line, the green arrow
    shows the entry direction.
 3. Place the line across the doorway so people must cross it fully, and so
-   their **feet** (red dot under each box) cross it — the bottom-centre of the
-   box is what is counted, not the head or the box edge. Boxes drawn grey are
-   outside the ROI and ignored.
+   their **body centre** (red dot in the middle of each box) crosses it — the
+   centre of the box is what is counted, not the feet, head or box edge. Boxes
+   drawn grey are outside the ROI and ignored.
 4. If the arrow points out of the venue instead of in, set `entry_side` to the
    other value.
 5. Walk through a few times and check that *Total people entered* goes up once

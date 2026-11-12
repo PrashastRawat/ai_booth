@@ -1,8 +1,8 @@
 """Multi-camera entrance counter worker.
 
 Per camera (own thread): webcam (OpenCV) -> YOLO nano person detection ->
-ByteTrack -> virtual counting line (entry direction only, bottom-centre of the
-person box as the point) -> POST each entry to the Next.js API. One local MJPEG preview server exposes
+ByteTrack -> virtual counting line (entry direction only, centre of the
+person box as the crossing point) -> POST each entry to the Next.js API. One local MJPEG preview server exposes
 /stream/<camera> and /snapshot/<camera> for the dashboard.
 
     python entry_counter.py                      # all cameras in config.json
@@ -34,7 +34,7 @@ from typing import Dict, Optional
 import cv2
 import numpy as np
 
-from line_counter import LineCounter
+from line_counter import LineCounter, box_centre
 from person_tracker import PersonTracker
 
 WORKER_DIR = Path(__file__).resolve().parent
@@ -292,11 +292,12 @@ def annotate(frame, name: str, counter: LineCounter, roi, tracks, session_entrie
     cv2.putText(frame, "ENTRY", (int(ax) + 6, int(ay)), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
 
     for x1, y1, x2, y2, tid in tracks:
-        foot = (int((x1 + x2) / 2), int(y2))
+        cx, cy = box_centre(x1, y1, x2, y2)
+        centre = (int(cx), int(cy))
         counted = counter.has_counted(tid)
-        color = (255, 200, 0) if counted else ((200, 200, 200) if in_roi(roi, foot) else (90, 90, 90))
+        color = (255, 200, 0) if counted else ((200, 200, 200) if in_roi(roi, centre) else (90, 90, 90))
         cv2.rectangle(frame, (int(x1), int(y1)), (int(x2), int(y2)), color, 2)
-        cv2.circle(frame, foot, 5, (0, 0, 255), -1)  # bottom-centre = crossing point
+        cv2.circle(frame, centre, 5, (0, 0, 255), -1)  # body centre = crossing point
         cv2.putText(frame, f"ID {tid}", (int(x1), int(y1) - 6), cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 2)
 
     cv2.putText(frame, f"Camera {name}   entries: {session_entries}   FPS: {fps:.1f}", (12, 30),
@@ -387,10 +388,10 @@ class CameraWorker(threading.Thread):
                 started = time.perf_counter()
                 tracks = tracker.update(frame)
                 for x1, y1, x2, y2, tid in tracks:
-                    foot = ((x1 + x2) / 2, y2)          # bottom-centre = where the person stands
-                    if not in_roi(roi, foot):
+                    centre = box_centre(x1, y1, x2, y2)   # body centre = crossing point
+                    if not in_roi(roi, centre):
                         continue                         # unrelated foot traffic outside the entrance area
-                    if counter.update(tid, foot, frame_index):
+                    if counter.update(tid, centre, frame_index):
                         self.api.send_entry({"id": str(uuid.uuid4()), "occurredAt": utc_now_iso(), "camera": name, "trackId": tid})
                         with state.lock:
                             state.session_entries += 1
