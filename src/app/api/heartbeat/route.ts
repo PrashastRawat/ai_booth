@@ -1,35 +1,40 @@
 import { NextResponse } from "next/server";
 import { getDb } from "@/lib/db";
 
-// Sent by the Python worker about once per second (camera status, FPS).
+const CAMERA_PATTERN = /^[A-Za-z0-9_-]{1,32}$/;
+
+// Sent by the Python worker about once per second with the health of every camera.
+// Body: { cameras: { A: { connected, feedAvailable, fps, sessionEntries }, B: {...} } }
 export async function POST(request: Request) {
-  let body: Record<string, unknown>;
+  let body: { cameras?: Record<string, Record<string, unknown>> };
   try {
     body = await request.json();
   } catch {
     return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
   }
+  const cameras = body?.cameras;
+  if (!cameras || typeof cameras !== "object") {
+    return NextResponse.json({ error: "cameras object required" }, { status: 400 });
+  }
 
-  const cameraConnected = body?.cameraConnected === true;
-  const feedAvailable = body?.feedAvailable === true;
-  const fps = typeof body?.fps === "number" && Number.isFinite(body.fps) ? body.fps : 0;
-  const sessionEntries =
-    typeof body?.sessionEntries === "number" && Number.isInteger(body.sessionEntries)
-      ? body.sessionEntries
-      : 0;
-
-  getDb()
-    .prepare(
-      `INSERT INTO worker_status (id, camera_connected, feed_ok, fps, session_entries, updated_at)
-       VALUES (1, ?, ?, ?, ?, ?)
-       ON CONFLICT(id) DO UPDATE SET
-         camera_connected = excluded.camera_connected,
-         feed_ok          = excluded.feed_ok,
-         fps              = excluded.fps,
-         session_entries  = excluded.session_entries,
-         updated_at       = excluded.updated_at`,
-    )
-    .run(cameraConnected ? 1 : 0, feedAvailable ? 1 : 0, fps, sessionEntries, Date.now());
-
-  return NextResponse.json({ ok: true });
+  const upsert = getDb().prepare(
+    `INSERT INTO camera_status (name, connected, feed_ok, fps, session_entries, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?)
+     ON CONFLICT(name) DO UPDATE SET
+       connected       = excluded.connected,
+       feed_ok         = excluded.feed_ok,
+       fps             = excluded.fps,
+       session_entries = excluded.session_entries,
+       updated_at      = excluded.updated_at`,
+  );
+  const now = Date.now();
+  let count = 0;
+  for (const [name, s] of Object.entries(cameras)) {
+    if (!CAMERA_PATTERN.test(name) || !s || typeof s !== "object") continue;
+    const fps = typeof s.fps === "number" && Number.isFinite(s.fps) ? s.fps : 0;
+    const sessionEntries = Number.isInteger(s.sessionEntries) ? (s.sessionEntries as number) : 0;
+    upsert.run(name, s.connected === true ? 1 : 0, s.feedAvailable === true ? 1 : 0, fps, sessionEntries, now);
+    count++;
+  }
+  return NextResponse.json({ ok: true, cameras: count });
 }

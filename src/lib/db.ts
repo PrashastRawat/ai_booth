@@ -22,6 +22,15 @@ function openDatabase(): DatabaseSync {
     );
     CREATE INDEX IF NOT EXISTS idx_entries_occurred_at ON entries (occurred_at);
 
+    CREATE TABLE IF NOT EXISTS camera_status (
+      name             TEXT PRIMARY KEY,            -- camera name from worker config (A, B, ...)
+      connected        INTEGER NOT NULL,
+      feed_ok          INTEGER NOT NULL,            -- 0 while frames are black/stalled
+      fps              REAL NOT NULL,
+      session_entries  INTEGER NOT NULL,
+      updated_at       INTEGER NOT NULL
+    );
+
     CREATE TABLE IF NOT EXISTS worker_status (
       id               INTEGER PRIMARY KEY CHECK (id = 1),  -- single row, updated by heartbeats
       camera_connected INTEGER NOT NULL,
@@ -30,10 +39,10 @@ function openDatabase(): DatabaseSync {
       updated_at       INTEGER NOT NULL
     );
   `);
-  // Added after the first release: whether frames are usable (not black/stalled).
-  const columns = db.prepare("PRAGMA table_info(worker_status)").all() as { name: string }[];
-  if (!columns.some((c) => c.name === "feed_ok")) {
-    db.exec("ALTER TABLE worker_status ADD COLUMN feed_ok INTEGER NOT NULL DEFAULT 1");
+  // Migration: entries made before multi-camera support belong to camera "A".
+  const entryColumns = db.prepare("PRAGMA table_info(entries)").all() as { name: string }[];
+  if (!entryColumns.some((c) => c.name === "camera")) {
+    db.exec("ALTER TABLE entries ADD COLUMN camera TEXT NOT NULL DEFAULT 'A'");
   }
   return db;
 }

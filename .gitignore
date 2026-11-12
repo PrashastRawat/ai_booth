@@ -51,3 +51,4 @@ worker/.*.part
 worker/diagnostics/
 worker/*.mp4
 worker/*.avi
+worker/models/

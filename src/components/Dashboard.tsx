@@ -2,29 +2,45 @@
 
 import { useEffect, useState } from "react";
 
+type CameraStats = {
+  name: string;
+  entries: number;
+  last5Minutes: number;
+  online: boolean;
+  connected: boolean;
+  feedAvailable: boolean;
+  fps: number;
+  sessionEntries: number;
+  lastSeenAt: string | null;
+};
+
 type Stats = {
   total: number;
   last5Minutes: number;
   lastEntryAt: string | null;
   serverTime: string;
-  worker: {
-    online: boolean;
-    cameraConnected: boolean;
-    feedAvailable: boolean;
-    fps: number;
-    sessionEntries: number;
-    lastSeenAt: string | null;
-  };
+  workerOnline: boolean;
+  cameras: CameraStats[];
 };
 
 const POLL_MS = 1500;
-// The worker serves its annotated preview on localhost only.
-const PREVIEW_URL =
-  process.env.NEXT_PUBLIC_PREVIEW_URL ?? "http://127.0.0.1:8765/stream";
+const PREVIEW_RETRY_MS = 10_000;
+// The worker serves its annotated previews on localhost only: <base>/stream/<camera>.
+const PREVIEW_BASE = process.env.NEXT_PUBLIC_PREVIEW_URL ?? "http://127.0.0.1:8765";
+// Entrances shown even before the worker has reported them.
+const EXPECTED_CAMERAS = ["A", "B"];
 
 function formatTime(iso: string | null): string {
   if (!iso) return "—";
   return new Date(iso).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+}
+
+function cameraStatus(cam: CameraStats | undefined, haveStats: boolean): { label: string; tone: "good" | "bad" | "warn" } {
+  if (!haveStats) return { label: "Connecting…", tone: "warn" };
+  if (!cam || !cam.online) return { label: "Worker offline", tone: "bad" };
+  if (!cam.connected) return { label: "Camera disconnected", tone: "bad" };
+  if (!cam.feedAvailable) return { label: "Camera feed unavailable", tone: "bad" };
+  return { label: "Camera connected", tone: "good" };
 }
 
 function StatusPill({ label, tone }: { label: string; tone: "good" | "bad" | "warn" }) {
@@ -51,10 +67,50 @@ function StatCard({ title, value, hint }: { title: string; value: string; hint?:
   );
 }
 
+function CameraPanel({ name, cam, haveStats, now }: { name: string; cam: CameraStats | undefined; haveStats: boolean; now: number }) {
+  // When the <img> stream errors we hide it for a while; `now` (the API's server
+  // time) advances on every poll, so the stream is retried after PREVIEW_RETRY_MS.
+  const [failedAt, setFailedAt] = useState<number | null>(null);
+  const status = cameraStatus(cam, haveStats);
+  const live = cam?.online ?? false;
+  const showStream = live && (failedAt === null || now - failedAt > PREVIEW_RETRY_MS);
+
+  return (
+    <section className="overflow-hidden rounded-2xl bg-white shadow-sm ring-1 ring-zinc-200 dark:bg-zinc-900 dark:ring-zinc-800">
+      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-zinc-200 px-5 py-3 dark:border-zinc-800">
+        <h2 className="text-sm font-medium">Entrance {name} · live preview</h2>
+        <div className="flex items-center gap-3">
+          <p className="text-xs text-zinc-500 dark:text-zinc-400">
+            {live ? `${cam?.fps ?? 0} FPS · ${cam?.sessionEntries ?? 0} this session` : "—"}
+          </p>
+          <StatusPill label={status.label} tone={status.tone} />
+        </div>
+      </div>
+      <div className="flex aspect-video items-center justify-center bg-zinc-100 dark:bg-zinc-950">
+        {showStream ? (
+          // Plain <img> is intentional: this is an MJPEG stream from the local worker.
+          // eslint-disable-next-line @next/next/no-img-element
+          <img
+            src={`${PREVIEW_BASE}/stream/${name}`}
+            alt={`Live annotated preview of entrance ${name}`}
+            className="size-full object-contain"
+            onError={() => setFailedAt(now)}
+          />
+        ) : (
+          <p className="px-6 text-center text-sm text-zinc-500 dark:text-zinc-400">
+            {live
+              ? "Preview stream unreachable, retrying…"
+              : `Preview unavailable. Start the Python worker (see README) to see camera ${name}.`}
+          </p>
+        )}
+      </div>
+    </section>
+  );
+}
+
 export default function Dashboard() {
   const [stats, setStats] = useState<Stats | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [previewFailed, setPreviewFailed] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -70,8 +126,6 @@ export default function Dashboard() {
         if (!cancelled) {
           setStats(data);
           setError(null);
-          // Retry the preview whenever the worker is (back) online.
-          if (data.worker.online) setPreviewFailed(false);
         }
       } catch (err) {
         if (!cancelled && !(err instanceof DOMException && err.name === "AbortError")) {
@@ -89,29 +143,23 @@ export default function Dashboard() {
     };
   }, []);
 
-  const cameraTone = !stats ? "warn" : stats.worker.feedAvailable ? "good" : "bad";
-  const cameraLabel = !stats
-    ? "Connecting…"
-    : !stats.worker.online
-      ? "Worker offline"
-      : !stats.worker.cameraConnected
-        ? "Camera disconnected"
-        : stats.worker.feedAvailable
-          ? "Camera connected"
-          : "Camera feed unavailable";
+  const cameraNames = [...new Set([...EXPECTED_CAMERAS, ...(stats?.cameras.map((c) => c.name) ?? [])])].sort();
+  const byName = (name: string) => stats?.cameras.find((c) => c.name === name);
+  const haveStats = stats !== null;
+  const now = stats ? Date.parse(stats.serverTime) : 0;
 
   return (
     <div className="min-h-screen bg-zinc-50 px-4 py-8 font-sans text-zinc-950 dark:bg-black dark:text-zinc-50 sm:px-8">
-      <div className="mx-auto flex max-w-5xl flex-col gap-6">
+      <div className="mx-auto flex max-w-6xl flex-col gap-6">
         <header className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div>
             <h1 className="text-2xl font-semibold tracking-tight">Entrance counter</h1>
             <p className="text-sm text-zinc-500 dark:text-zinc-400">
-              Live people entering through the virtual line · updates every 1.5 s
+              Live entries across all entrances · updates every 1.5 s
             </p>
           </div>
           <div className="flex flex-wrap gap-2">
-            <StatusPill label={cameraLabel} tone={cameraTone} />
+            {haveStats && !stats.workerOnline && <StatusPill label="Worker offline" tone="bad" />}
             {error && <StatusPill label="API unreachable" tone="bad" />}
           </div>
         </header>
@@ -122,34 +170,22 @@ export default function Dashboard() {
           </div>
         )}
 
-        <section className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-          <StatCard title="Total people entered" value={stats ? stats.total.toLocaleString() : "—"} hint={`Last entry: ${formatTime(stats?.lastEntryAt ?? null)}`} />
-          <StatCard title="Entered in the last 5 minutes" value={stats ? stats.last5Minutes.toLocaleString() : "—"} />
+        <section className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          <StatCard
+            title="Total entries"
+            value={stats ? stats.total.toLocaleString() : "—"}
+            hint={`Last entry: ${formatTime(stats?.lastEntryAt ?? null)}`}
+          />
+          {cameraNames.map((name) => (
+            <StatCard key={name} title={`Entrance ${name}`} value={stats ? (byName(name)?.entries ?? 0).toLocaleString() : "—"} />
+          ))}
+          <StatCard title="Last 5 minutes" value={stats ? stats.last5Minutes.toLocaleString() : "—"} hint="All entrances" />
         </section>
 
-        <section className="overflow-hidden rounded-2xl bg-white shadow-sm ring-1 ring-zinc-200 dark:bg-zinc-900 dark:ring-zinc-800">
-          <div className="flex items-center justify-between border-b border-zinc-200 px-5 py-3 dark:border-zinc-800">
-            <h2 className="text-sm font-medium">Live camera preview</h2>
-            <p className="text-xs text-zinc-500 dark:text-zinc-400">
-              {stats?.worker.online ? `${stats.worker.fps} FPS · ${stats.worker.sessionEntries} counted this session` : "Worker not running"}
-            </p>
-          </div>
-          <div className="flex aspect-video items-center justify-center bg-zinc-100 dark:bg-zinc-950">
-            {previewFailed ? (
-              <p className="px-6 text-center text-sm text-zinc-500 dark:text-zinc-400">
-                Preview unavailable. Start the Python worker (see README) to see the live camera feed.
-              </p>
-            ) : (
-              // Plain <img> is intentional: this is an MJPEG stream from the local worker.
-              // eslint-disable-next-line @next/next/no-img-element
-              <img
-                src={PREVIEW_URL}
-                alt="Live annotated camera preview"
-                className="size-full object-contain"
-                onError={() => setPreviewFailed(true)}
-              />
-            )}
-          </div>
+        <section className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+          {cameraNames.map((name) => (
+            <CameraPanel key={name} name={name} cam={byName(name)} haveStats={haveStats} now={now} />
+          ))}
         </section>
       </div>
     </div>
