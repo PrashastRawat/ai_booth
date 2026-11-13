@@ -1,6 +1,7 @@
 import { NextResponse, connection } from "next/server";
 import { getDb } from "@/lib/db";
 import { eventScopeFromEnv, visitorSummary } from "@/lib/visitors";
+import { estimateSummary } from "@/lib/estimate";
 
 const WORKER_TIMEOUT_MS = 5000;
 
@@ -41,6 +42,8 @@ export async function GET() {
   const db = getDb();
   const now = Date.now();
   const summary = visitorSummary(db, now, scope);
+  // Hourly-adjusted estimates (see src/lib/estimate.ts). Separate from the raw counts above.
+  const estimate = estimateSummary(db, now, scope);
 
   const statusRows = db
     .prepare("SELECT name, connected, feed_ok, fps, session_entries, updated_at FROM camera_status ORDER BY name")
@@ -70,6 +73,9 @@ export async function GET() {
   return NextResponse.json({
     todayVisitors: summary.todayVisitors,
     totalVisitors: summary.totalVisitors,
+    // Estimates, not verified unique-person counts. Raw counts above are unchanged.
+    estimatedTodayVisitors: estimate.estimatedTodayVisitors,
+    estimatedTotalVisitors: estimate.estimatedTotalVisitors,
     timezone: summary.timezone,
     date: summary.date,
     event: { startDate: scope.startDate, endDate: scope.endDate },

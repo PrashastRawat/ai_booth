@@ -1,24 +1,42 @@
 import Image from "next/image";
 import type { CSSProperties } from "react";
+import { formatVisitors } from "@/lib/formatVisitors";
 
-const formatter = new Intl.NumberFormat("en-IN"); // Indian grouping: 1,25,000
+// Exact value with Indian grouping (1,25,000), shown as a tooltip next to the short form.
+const exactFormatter = new Intl.NumberFormat("en-IN");
 
-// Cusped Rajasthani arch outline in card units (card is 521 x 563): ogee apex,
-// two lobes per shoulder, straight sides and rounded bottom corners.
-const ARCH_PATH =
-  "M260.5 1.5C247 23 225 32 195 38 153 45 128 59 125 85 84 85 50 108 50 137 30 137 1.5 167 1.5 192" +
-  "V525A36 36 0 0 0 37.5 561.5H483.5A36 36 0 0 0 519.5 525V192" +
-  "C519.5 167 491 137 471 137 471 108 437 85 396 85 393 59 368 45 326 38 296 32 274 23 260.5 1.5Z";
+// Card size in layout units; must match .rj-card in RajasthanDashboard.css.
+const CARD_H = 380;
+// The arch top is drawn at 0.74 of its full height so the compact card keeps its silhouette.
+const ARCH_TOP_SCALE = 0.74;
+
+/**
+ * Cusped Rajasthani arch outline in card units (521 wide): ogee apex, two lobes per
+ * shoulder, straight sides and rounded bottom corners.
+ */
+function archPath(h: number): string {
+  const y = (v: number) => Math.round((1.5 + (v - 1.5) * ARCH_TOP_SCALE) * 10) / 10;
+  return (
+    `M260.5 ${y(1.5)}C247 ${y(23)} 225 ${y(32)} 195 ${y(38)} 153 ${y(45)} 128 ${y(59)} 125 ${y(85)} ` +
+    `84 ${y(85)} 50 ${y(108)} 50 ${y(137)} 30 ${y(137)} 1.5 ${y(167)} 1.5 ${y(192)}` +
+    `V${h - 37.5}A36 36 0 0 0 37.5 ${h - 1.5}H483.5A36 36 0 0 0 519.5 ${h - 37.5}V${y(192)}` +
+    `C519.5 ${y(167)} 491 ${y(137)} 471 ${y(137)} 471 ${y(108)} 437 ${y(85)} 396 ${y(85)} ` +
+    `393 ${y(59)} 368 ${y(45)} 326 ${y(38)} 296 ${y(32)} 274 ${y(23)} 260.5 ${y(1.5)}Z`
+  );
+}
+const ARCH_PATH = archPath(CARD_H);
 
 // Advance widths (em) of Playfair Display ExtraBold, measured in the browser.
 const ADVANCE_EM: Record<string, number> = {
   "0": 0.701, "1": 0.49, "2": 0.627, "3": 0.625, "4": 0.649,
   "5": 0.599, "6": 0.648, "7": 0.554, "8": 0.676, "9": 0.648, ",": 0.328,
+  ".": 0.3, K: 0.8, M: 1.0, // approximate; only used to decide whether to shrink
 };
 // The glyphs' outer side bearings (about 0.45 em in total) are blank space.
 const OUTER_BEARINGS_EM = 0.45;
-// Ink width available inside the card at full size: 461 of the card's 521 units at 156 units/em.
-const MAX_INK_EM = 461 / 156;
+// Ink width available inside the card at full size: 461 of the card's 521 units, with the
+// number set at 122 units/em (.rj-value font-size in RajasthanDashboard.css).
+const MAX_INK_EM = 461 / 122;
 
 /** Shrinks the number only when its ink would be wider than the card (e.g. 1,25,000). */
 function fitScale(text: string): number {
@@ -30,15 +48,17 @@ function fitScale(text: string): number {
 type Props = { id: string; label: string; value: number | null };
 
 export default function VisitorCounterCard({ id, label, value }: Props) {
-  const text = value === null ? "—" : formatter.format(value);
+  // Short display form (12.4K, truncated); the exact raw count stays in the data and tooltip.
+  const text = value === null ? "—" : formatVisitors(value);
+  const exact = value === null ? undefined : exactFormatter.format(value);
   const fillId = `rj-card-fill-${id}`;
   const clipId = `rj-card-clip-${id}`;
 
   return (
     <section className="rj-card" aria-labelledby={`rj-label-${id}`}>
-      <svg className="rj-frame" viewBox="-6 -6 533 575" aria-hidden focusable="false">
+      <svg className="rj-frame" viewBox={`-6 -6 533 ${CARD_H + 12}`} aria-hidden focusable="false">
         <defs>
-          <linearGradient id={fillId} gradientUnits="userSpaceOnUse" x1="0" y1="0" x2="0" y2="563">
+          <linearGradient id={fillId} gradientUnits="userSpaceOnUse" x1="0" y1="0" x2="0" y2={CARD_H}>
             <stop offset="0" stopColor="#fff2df" />
             <stop offset="0.5" stopColor="#fdefd9" />
             <stop offset="1" stopColor="#fdead0" />
@@ -54,7 +74,7 @@ export default function VisitorCounterCard({ id, label, value }: Props) {
           <path d={ARCH_PATH} stroke={`url(#${fillId})`} strokeWidth="15" />
           <path d={ARCH_PATH} stroke="#fff8ec" strokeWidth="10" />
         </g>
-        <path d={ARCH_PATH} fill="none" stroke="#ab352c" strokeWidth="3.2" />
+        <path d={ARCH_PATH} fill="none" stroke="#9f1016" strokeWidth="3.2" />
       </svg>
 
       <Image className="rj-ornament" src="/rajasthan/lotus-ornament.svg" alt="" aria-hidden width={56} height={40} loading="eager" />
@@ -63,8 +83,8 @@ export default function VisitorCounterCard({ id, label, value }: Props) {
         {label}
       </h2>
       <Image className="rj-rule" src="/rajasthan/divider.svg" alt="" aria-hidden width={250} height={12} loading="eager" />
-      <p className="rj-value" style={{ "--fit": fitScale(text) } as CSSProperties}>
-        {text}
+      <p className="rj-value" style={{ "--fit": fitScale(text) } as CSSProperties} title={exact}>
+        {value === null ? text : <data value={value}>{text}</data>}
       </p>
       <Image className="rj-pavilion" src="/rajasthan/pavilion.svg" alt="" aria-hidden width={390} height={112} loading="eager" />
     </section>

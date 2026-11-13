@@ -176,6 +176,57 @@ The worker drops events the API rejects with `4xx` and logs an error.
 
 Keep Windows time synchronisation on, so the PC clock stays correct.
 
+### Estimated (hourly-adjusted) counts
+
+`/api/stats` also returns `estimatedTodayVisitors` and `estimatedTotalVisitors`. These
+are **estimates, not verified unique-visitor counts**. The raw `todayVisitors` and
+`totalVisitors` are unchanged and remain the source of truth. No entry is ever
+changed, rejected or deleted to produce an estimate.
+
+How each IST day's estimate is calculated:
+
+1. **Threshold:** the first 1,000 entries of the day count as they are. Below 1,000,
+   the estimate equals the raw count.
+2. **Activation:** the timestamp of the day's 1,000th entry (T) starts hourly windows:
+   `[T, T+1h)`, `[T+1h, T+2h)`, and so on. The last window is cut off at IST midnight.
+   A new cycle starts every IST day.
+3. **Deduction:** each **completed** window with N entries contributes
+   `N − floor(N × rate)`, where the rate is:
+
+   | Entries in window | Rate |
+   |---|---|
+   | 0 | 0% |
+   | 1–999 | 5% |
+   | 1,000–1,499 | 10% |
+   | 1,500–1,999 | 15% |
+   | 2,000–2,499 | 20% |
+   | 2,500 or more | 25% (maximum) |
+
+   For example: 400 entries → 380, 1,000 → 900, 2,000 → 1,600, 3,000 → 2,250.
+4. **Current window:** the window still in progress counts unadjusted until it
+   closes. **The estimate can therefore drop when a window closes** and its
+   deduction is applied.
+
+The estimated total is the sum of the daily estimates over the event period. Each
+day applies its own 1,000-entry threshold.
+
+Nothing about the estimate is stored. It is recomputed from the stored event
+timestamps on every request, so:
+
+- restarts, outages and IST midnight need no special handling;
+- a window can never be deducted twice;
+- a late event is counted in the window and day it actually occurred in.
+
+A late event that occurred before the 1,000th entry moves T, and the windows are
+recalculated from the new T.
+
+`GET /api/stats/estimate?date=YYYY-MM-DD` (default: today) shows the audit breakdown
+for one day:
+
+- the activation time;
+- each window's raw entries, rate, deduction and adjusted entries;
+- whether each window is complete.
+
 ## Setting up the line
 
 1. Start both processes and open the dashboard.

@@ -8,8 +8,6 @@ const RAJASTHAN_LOGO = { src: "/logos/rajasthan _gov..png", width: 300, height: 
 export default function RajasthanHeader() {
   return (
     <header className="rj-header">
-      <Image className="rj-corner-left" src="/rajasthan/header-corner.svg" alt="" aria-hidden width={136} height={121} loading="eager" />
-      <Image className="rj-corner-right" src="/rajasthan/header-corner.svg" alt="" aria-hidden width={136} height={121} loading="eager" />
       <div className="rj-logos">
         <Image className="rj-logo-iitf" alt="IITF" loading="eager" {...IITF_LOGO} />
         <span className="rj-logo-divider" aria-hidden />

@@ -1,0 +1,1 @@
+Remove-Item -LiteralPath 'data\entries.db','data\entries.db-wal','data\entries.db-shm' -Force -ErrorAction SilentlyContinue
