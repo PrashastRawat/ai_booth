@@ -1,0 +1,33 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1710 190" width="1710" height="190" preserveAspectRatio="none">
+  <!-- Layered sand dunes across the bottom of the dashboard. -->
+  <defs>
+    <linearGradient id="far" x1="0" x2="1">
+      <stop offset="0" stop-color="#fde8d1"/>
+      <stop offset=".5" stop-color="#fee6ca"/>
+      <stop offset="1" stop-color="#fcdab3"/>
+    </linearGradient>
+    <linearGradient id="mid" x1="0" x2="1">
+      <stop offset="0" stop-color="#fcdcb6"/>
+      <stop offset=".5" stop-color="#fdddb8"/>
+      <stop offset="1" stop-color="#fbcf9c"/>
+    </linearGradient>
+    <linearGradient id="near" x1="0" x2="1">
+      <stop offset="0" stop-color="#f4bb7c"/>
+      <stop offset=".3" stop-color="#f8c78f"/>
+      <stop offset=".5" stop-color="#fcd29f"/>
+      <stop offset=".8" stop-color="#fbcc96"/>
+      <stop offset="1" stop-color="#facb95"/>
+    </linearGradient>
+    <linearGradient id="nearShade" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#fff" stop-opacity="0"/>
+      <stop offset="1" stop-color="#fff3e0" stop-opacity=".35"/>
+    </linearGradient>
+  </defs>
+  <path d="M0 46C120 40 230 56 330 70 450 86 560 70 700 58 820 48 900 42 1000 44 1150 46 1260 34 1380 20 1450 12 1520 9 1580 13 1640 17 1690 25 1710 29V190H0Z" fill="url(#far)"/>
+  <path d="M0 62C80 60 160 70 240 84 360 104 480 112 620 108 760 104 880 112 1000 106 1120 100 1240 84 1360 64 1460 50 1560 47 1640 55 1680 59 1700 63 1710 65V190H0Z" fill="url(#mid)"/>
+  <path d="M0 62C80 60 160 70 240 84 360 104 480 112 620 108M1000 106C1120 100 1240 84 1360 64 1460 50 1560 47 1640 55" fill="none" stroke="#fff1de" stroke-opacity=".75" stroke-width="2"/>
+  <path d="M0 106C40 99 90 94 135 96 200 101 262 121 332 139 420 160 520 160 640 152 760 144 840 148 940 152 1060 156 1180 150 1290 140 1400 128 1500 106 1600 98 1650 94 1690 95 1710 97V190H0Z" fill="url(#near)"/>
+  <path d="M0 106C40 99 90 94 135 96 200 101 262 121 332 139 420 160 520 160 640 152 760 144 840 148 940 152 1060 156 1180 150 1290 140 1400 128 1500 106 1600 98 1650 94 1690 95 1710 97V190H0Z" fill="url(#nearShade)"/>
+  <path d="M0 106C40 99 90 94 135 96 200 101 262 121 332 139M1290 140C1400 128 1500 106 1600 98 1650 94 1690 95 1710 97" fill="none" stroke="#fde0b8" stroke-opacity=".8" stroke-width="2"/>
+  <path d="M60 140C160 132 260 150 360 170M1350 166C1450 150 1560 138 1690 136" fill="none" stroke="#fbe0bb" stroke-opacity=".55" stroke-width="2.4"/>
+</svg>

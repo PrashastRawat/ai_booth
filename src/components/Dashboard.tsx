@@ -4,6 +4,8 @@ import { useEffect, useState } from "react";
 
 type CameraStats = {
   name: string;
+  todayVisitors: number;
+  totalVisitors: number;
   entries: number;
   last5Minutes: number;
   online: boolean;
@@ -15,6 +17,11 @@ type CameraStats = {
 };
 
 type Stats = {
+  todayVisitors: number;
+  totalVisitors: number;
+  timezone: string;
+  date: string;
+  event: { startDate: string | null; endDate: string | null };
   total: number;
   last5Minutes: number;
   lastEntryAt: string | null;
@@ -30,9 +37,16 @@ const PREVIEW_BASE = process.env.NEXT_PUBLIC_PREVIEW_URL ?? "http://127.0.0.1:87
 // Entrances shown even before the worker has reported them.
 const EXPECTED_CAMERAS = ["A", "B"];
 
-function formatTime(iso: string | null): string {
+// Times and dates are shown in the event timezone reported by the API, not the browser's.
+function formatTime(iso: string | null, timeZone: string | undefined): string {
   if (!iso) return "—";
-  return new Date(iso).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+  return new Date(iso).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit", timeZone });
+}
+
+function formatDay(date: string | null | undefined): string {
+  if (!date) return "—";
+  // A bare "YYYY-MM-DD" is a calendar day; format it at UTC noon so no timezone shifts it.
+  return new Date(`${date}T12:00:00Z`).toLocaleDateString([], { day: "numeric", month: "short", year: "numeric", timeZone: "UTC" });
 }
 
 function cameraStatus(cam: CameraStats | undefined, haveStats: boolean): { label: string; tone: "good" | "bad" | "warn" } {
@@ -121,7 +135,11 @@ export default function Dashboard() {
       controller = new AbortController();
       try {
         const res = await fetch("/api/stats", { cache: "no-store", signal: controller.signal });
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        if (!res.ok) {
+          const body = await res.json().catch(() => null);
+          if (!cancelled) setError(body?.error ?? `The API returned HTTP ${res.status}.`);
+          return;
+        }
         const data: Stats = await res.json();
         if (!cancelled) {
           setStats(data);
@@ -170,14 +188,31 @@ export default function Dashboard() {
           </div>
         )}
 
-        <section className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        <section className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           <StatCard
-            title="Total entries"
-            value={stats ? stats.total.toLocaleString() : "—"}
-            hint={`Last entry: ${formatTime(stats?.lastEntryAt ?? null)}`}
+            title="Today's Visitors"
+            value={stats ? stats.todayVisitors.toLocaleString() : "—"}
+            hint={stats ? `${formatDay(stats.date)} (IST) · last entry ${formatTime(stats.lastEntryAt, stats.timezone)}` : undefined}
           />
+          <StatCard
+            title="Total Visitors"
+            value={stats ? stats.totalVisitors.toLocaleString() : "—"}
+            hint={
+              stats?.event.startDate
+                ? `Since ${formatDay(stats.event.startDate)}${stats.event.endDate ? ` · until ${formatDay(stats.event.endDate)}` : ""}`
+                : "All recorded entries"
+            }
+          />
+        </section>
+
+        <section className="grid grid-cols-1 gap-4 sm:grid-cols-3">
           {cameraNames.map((name) => (
-            <StatCard key={name} title={`Entrance ${name}`} value={stats ? (byName(name)?.entries ?? 0).toLocaleString() : "—"} />
+            <StatCard
+              key={name}
+              title={`Entrance ${name} · today`}
+              value={stats ? (byName(name)?.todayVisitors ?? 0).toLocaleString() : "—"}
+              hint={stats ? `Total ${(byName(name)?.totalVisitors ?? 0).toLocaleString()}` : undefined}
+            />
           ))}
           <StatCard title="Last 5 minutes" value={stats ? stats.last5Minutes.toLocaleString() : "—"} hint="All entrances" />
         </section>

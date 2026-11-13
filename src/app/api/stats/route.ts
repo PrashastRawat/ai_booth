@@ -1,8 +1,8 @@
 import { NextResponse, connection } from "next/server";
 import { getDb } from "@/lib/db";
+import { eventScopeFromEnv, visitorSummary } from "@/lib/visitors";
 
 const WORKER_TIMEOUT_MS = 5000;
-const LAST_WINDOW_MS = 5 * 60 * 1000;
 
 type Row = Record<string, number | bigint | string | null | Uint8Array>;
 
@@ -12,6 +12,9 @@ function num(value: unknown): number {
 
 export type CameraStats = {
   name: string;
+  todayVisitors: number;
+  totalVisitors: number;
+  /** Same as totalVisitors; kept for older consumers. */
   entries: number;
   last5Minutes: number;
   online: boolean;
@@ -24,44 +27,37 @@ export type CameraStats = {
 
 export async function GET() {
   // Opt this handler out of prerendering so the numbers are read on every request.
+  // Because "today" is recomputed per request, the IST day rolls over at midnight
+  // with no restart and no reset.
   await connection();
+
+  let scope;
+  try {
+    scope = eventScopeFromEnv();
+  } catch (err) {
+    return NextResponse.json({ error: `Invalid event configuration: ${(err as Error).message}` }, { status: 500 });
+  }
 
   const db = getDb();
   const now = Date.now();
-  const since = now - LAST_WINDOW_MS;
-
-  const totals = (db
-    .prepare(
-      `SELECT COUNT(*) AS total,
-              SUM(CASE WHEN occurred_at >= ? THEN 1 ELSE 0 END) AS last5,
-              MAX(occurred_at) AS lastEntryAt
-         FROM entries`,
-    )
-    .get(since) ?? {}) as Row;
-
-  const perCamera = new Map<string, { entries: number; last5: number }>();
-  for (const r of db
-    .prepare(
-      `SELECT camera, COUNT(*) AS entries, SUM(CASE WHEN occurred_at >= ? THEN 1 ELSE 0 END) AS last5
-         FROM entries GROUP BY camera`,
-    )
-    .all(since) as Row[]) {
-    perCamera.set(String(r.camera), { entries: num(r.entries), last5: num(r.last5) });
-  }
+  const summary = visitorSummary(db, now, scope);
 
   const statusRows = db
     .prepare("SELECT name, connected, feed_ok, fps, session_entries, updated_at FROM camera_status ORDER BY name")
     .all() as Row[];
 
-  const names = new Set<string>([...perCamera.keys(), ...statusRows.map((r) => String(r.name))]);
+  const names = new Set<string>([...summary.perCamera.keys(), ...statusRows.map((r) => String(r.name))]);
   const cameras: CameraStats[] = [...names].sort().map((name) => {
     const s = statusRows.find((r) => String(r.name) === name);
+    const counts = summary.perCamera.get(name);
     const online = s !== undefined && now - num(s.updated_at) < WORKER_TIMEOUT_MS;
     const connected = online && num(s?.connected) === 1;
     return {
       name,
-      entries: perCamera.get(name)?.entries ?? 0,
-      last5Minutes: perCamera.get(name)?.last5 ?? 0,
+      todayVisitors: counts?.today ?? 0,
+      totalVisitors: counts?.total ?? 0,
+      entries: counts?.total ?? 0,
+      last5Minutes: counts?.last5Minutes ?? 0,
       online,
       connected,
       feedAvailable: connected && num(s?.feed_ok) === 1,
@@ -72,9 +68,15 @@ export async function GET() {
   });
 
   return NextResponse.json({
-    total: num(totals.total),
-    last5Minutes: num(totals.last5),
-    lastEntryAt: totals.lastEntryAt == null ? null : new Date(num(totals.lastEntryAt)).toISOString(),
+    todayVisitors: summary.todayVisitors,
+    totalVisitors: summary.totalVisitors,
+    timezone: summary.timezone,
+    date: summary.date,
+    event: { startDate: scope.startDate, endDate: scope.endDate },
+    // Same as totalVisitors; kept for older consumers.
+    total: summary.totalVisitors,
+    last5Minutes: summary.last5Minutes,
+    lastEntryAt: summary.lastEntryAt === null ? null : new Date(summary.lastEntryAt).toISOString(),
     serverTime: new Date(now).toISOString(),
     workerOnline: cameras.some((c) => c.online),
     cameras,

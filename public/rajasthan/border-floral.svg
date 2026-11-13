@@ -1,0 +1,92 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 210 50" width="210" height="50">
+  <!-- One repeat of the floral border along the bottom edge (tiled horizontally):
+       leaf sprig, flower cluster, leaf sprig, flower cluster. -->
+  <defs>
+    <linearGradient id="band" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#ffedcf"/>
+      <stop offset="1" stop-color="#fce0bb"/>
+    </linearGradient>
+    <linearGradient id="goldTop" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#e4c49b"/>
+      <stop offset=".5" stop-color="#b77129"/>
+      <stop offset="1" stop-color="#d5a573"/>
+    </linearGradient>
+    <linearGradient id="goldBottom" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#eab16c"/>
+      <stop offset="1" stop-color="#d98e41"/>
+    </linearGradient>
+    <path id="leaf" d="M0 0C2.6 -7.4 10 -10 16.5 -8.4 14.4 -2.2 7.6 1.2 0 0Z"/>
+    <g id="sprig">
+      <path d="M-24 0C-13 -1.6 13 -1.6 24 0" fill="none" stroke="#5f7d42" stroke-width="1.5"/>
+      <use href="#leaf" fill="#6c8a4c" transform="translate(-3 -.6) scale(-1 1)"/>
+      <use href="#leaf" fill="#86a05f" transform="translate(-3 .6) scale(-1 -1)"/>
+      <use href="#leaf" fill="#86a05f" transform="translate(3 -.6)"/>
+      <use href="#leaf" fill="#6c8a4c" transform="translate(3 .6) scale(1 -1)"/>
+      <use href="#leaf" fill="#7d9657" transform="translate(-12 -.4) scale(-.7 .7)"/>
+      <use href="#leaf" fill="#7d9657" transform="translate(12 .4) scale(.7 -.7)"/>
+      <circle cx="-25.5" cy="0" r="2.3" fill="#d9534f"/>
+      <circle cx="25.5" cy="0" r="2.3" fill="#d9534f"/>
+    </g>
+    <g id="bloom">
+      <g fill="#d6505a">
+        <ellipse cy="-6.5" rx="4.9" ry="6.3"/>
+        <ellipse cy="-6.5" rx="4.9" ry="6.3" transform="rotate(72)"/>
+        <ellipse cy="-6.5" rx="4.9" ry="6.3" transform="rotate(144)"/>
+        <ellipse cy="-6.5" rx="4.9" ry="6.3" transform="rotate(216)"/>
+        <ellipse cy="-6.5" rx="4.9" ry="6.3" transform="rotate(288)"/>
+      </g>
+      <circle r="3.8" fill="#b9383f"/>
+      <circle r="2.2" fill="#f2c25e"/>
+    </g>
+    <path id="petal" d="M0 0C3 -5.8 9 -7.4 13.6 -5 9.8 -1.8 5.2 .3 0 0Z"/>
+  </defs>
+  <rect width="210" height="50" fill="url(#band)"/>
+  <rect y="0" width="210" height="2" fill="#fbdcb3"/>
+  <rect y="2" width="210" height="2" fill="#fbefde"/>
+  <rect y="4" width="210" height="4" fill="url(#goldTop)"/>
+  <rect y="45.5" width="210" height="4.5" fill="url(#goldBottom)"/>
+
+  <use href="#sprig" x="26" y="25.5"/>
+  <use href="#sprig" x="131" y="25.5"/>
+
+  <!-- cluster A: red bloom with petals and a pale bud -->
+  <use href="#bloom" x="79" y="25.5"/>
+  <g fill="#dd6a64">
+    <use href="#petal" transform="translate(66 18) rotate(-20)"/>
+    <use href="#petal" transform="translate(92 33) rotate(160)"/>
+    <use href="#petal" transform="translate(89 16) rotate(25) scale(.8)"/>
+    <use href="#petal" transform="translate(68 34) rotate(200) scale(.8)"/>
+  </g>
+  <circle cx="64.5" cy="27" r="2.6" fill="#e98a7d"/>
+  <g fill="#f0bf6a"><circle cx="55" cy="18.5" r="1.5"/><circle cx="57" cy="32.5" r="1.3"/><circle cx="101" cy="30" r="1.4"/><circle cx="99" cy="19" r="1.2"/></g>
+
+  <!-- cluster B: two blooms and a pale gold flower -->
+  <use href="#bloom" x="176" y="21" transform="translate(35.2 4.2) scale(.8)"/>
+  <use href="#bloom" x="194" y="33" transform="translate(58.2 9.9) scale(.7)"/>
+  <g fill="#f3d79a">
+    <ellipse cx="190" cy="17" rx="2.2" ry="3"/>
+    <ellipse cx="190" cy="17" rx="2.2" ry="3" transform="rotate(72 190 20)"/>
+    <ellipse cx="190" cy="17" rx="2.2" ry="3" transform="rotate(144 190 20)"/>
+    <ellipse cx="190" cy="17" rx="2.2" ry="3" transform="rotate(216 190 20)"/>
+    <ellipse cx="190" cy="17" rx="2.2" ry="3" transform="rotate(288 190 20)"/>
+  </g>
+  <circle cx="190" cy="20" r="1.5" fill="#e3a947"/>
+  <g fill="#dd6a64">
+    <use href="#petal" transform="translate(160 31) rotate(190)"/>
+    <use href="#petal" transform="translate(172 14) rotate(-35) scale(.8)"/>
+  </g>
+  <g fill="#f0bf6a"><circle cx="157" cy="19" r="1.4"/><circle cx="203" cy="29" r="1.3"/><circle cx="182" cy="34.5" r="1.2"/></g>
+
+  <!-- fillers between motifs -->
+  <g fill="#dd6a64" opacity=".85">
+    <use href="#petal" transform="translate(48 30) rotate(140) scale(.7)"/>
+    <use href="#petal" transform="translate(108 21) rotate(-30) scale(.7)"/>
+    <use href="#petal" transform="translate(153 30) rotate(150) scale(.7)"/>
+    <use href="#petal" transform="translate(206 19) rotate(-25) scale(.7)"/>
+  </g>
+  <g fill="#7d9657">
+    <use href="#leaf" transform="translate(101 33) rotate(20) scale(.55)"/>
+    <use href="#leaf" transform="translate(57 18) rotate(200) scale(.55)"/>
+    <use href="#leaf" transform="translate(200 33) rotate(15) scale(.5)"/>
+  </g>
+</svg>

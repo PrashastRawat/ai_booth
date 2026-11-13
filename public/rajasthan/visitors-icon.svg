@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 68 49" width="68" height="49">
+  <!-- Three visitors: two smaller figures behind a central one. -->
+  <g fill="#e2a02a">
+    <circle cx="12.5" cy="15" r="7.6"/>
+    <circle cx="55.5" cy="15" r="7.6"/>
+    <path d="M1 49V37.5A11.5 11.5 0 0 1 12.5 26h0A11.5 11.5 0 0 1 24 37.5V49Z"/>
+    <path d="M44 49V37.5A11.5 11.5 0 0 1 55.5 26h0A11.5 11.5 0 0 1 67 37.5V49Z"/>
+  </g>
+  <!-- Central figure, outlined in the card colour so it reads as standing in front. -->
+  <g fill="#e2a02a" stroke="#fdf0dc" stroke-width="2.2">
+    <circle cx="34" cy="10.2" r="9.6"/>
+    <path d="M19.5 50V36.5A13.5 13.5 0 0 1 33 23h2A13.5 13.5 0 0 1 48.5 36.5V50Z"/>
+  </g>
+</svg>

@@ -1,0 +1,324 @@
+/*
+ * Rajasthan visitor dashboard. Every selector is a class prefixed "rj-" that only this
+ * route uses, so nothing here can match elements of the dashboard at "/". (A CSS module
+ * is not used because the project-wide Turbopack rule for "*.css" in next.config.ts
+ * compiles modules as global CSS with unhashed class names.)
+ *
+ * Layout is measured from the 1710 x 920 reference design. Every size is written as
+ * "reference pixels x --s", where --s scales that design to fit the viewport. Extra
+ * height at other aspect ratios (--extra) is split around the cards; the header stays
+ * at the top and the dunes and border at the bottom.
+ */
+
+.rj-root {
+  --s: min(calc(100vw / 1710), calc(100vh / 920));
+  --extra: max(0px, calc(100vh - 920 * var(--s)));
+
+  position: relative;
+  isolation: isolate;
+  width: 100%;
+  height: 100vh;
+  overflow: hidden;
+  color-scheme: light;
+  font-family: var(--font-rj-serif), Georgia, "Times New Roman", serif;
+  background:
+    radial-gradient(ellipse 22% 24% at 17% 21%, rgb(229 208 210 / 0.55), transparent 70%),
+    radial-gradient(ellipse 22% 24% at 83% 21%, rgb(229 208 210 / 0.55), transparent 70%),
+    linear-gradient(
+      180deg,
+      #f4ddd3 13%,
+      #f9e5d8 20%,
+      #fbe6d6 33%,
+      #fde4cd 43%,
+      #fee5cb 50%,
+      #fde9d5 56%,
+      #feecd8 69%,
+      #fbdcb8 100%
+    );
+}
+
+/* ---------------------------------------------------------------- header */
+
+.rj-header {
+  position: absolute;
+  z-index: 6;
+  top: 0;
+  left: 0;
+  right: 0;
+  box-sizing: border-box;
+  height: calc(124 * var(--s));
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(180deg, #fdf6ef, #fcf3ea);
+  border-bottom: calc(3 * var(--s)) solid #cd8434;
+  box-shadow: 0 calc(2 * var(--s)) calc(12 * var(--s)) rgb(176 108 62 / 0.3);
+}
+
+.rj-corner-left,
+.rj-corner-right {
+  position: absolute;
+  top: 0;
+  width: calc(136 * var(--s));
+  height: calc(121 * var(--s));
+}
+
+.rj-corner-left {
+  left: 0;
+}
+
+.rj-corner-right {
+  right: 0;
+  transform: scaleX(-1);
+}
+
+.rj-logos {
+  display: flex;
+  align-items: center;
+  gap: calc(44 * var(--s));
+}
+
+/* The logo files are JPEGs on white (#fff and #f6f6f6); a slight brightness lift turns
+   the background pure white, and multiply then drops it into the header colour. */
+.rj-logo-iitf,
+.rj-logo-rajasthan {
+  width: auto;
+  mix-blend-mode: multiply;
+}
+
+.rj-logo-iitf {
+  height: calc(86 * var(--s));
+}
+
+.rj-logo-rajasthan {
+  height: calc(112 * var(--s));
+  filter: brightness(1.045);
+}
+
+.rj-logo-divider {
+  width: calc(2 * var(--s));
+  height: calc(86 * var(--s));
+  background: linear-gradient(180deg, rgb(168 122 69 / 0.15), #9e7040 18%, #996c3b 50%, #9e7040 82%, rgb(168 122 69 / 0.15));
+}
+
+/* ------------------------------------------------------------ scenery */
+
+.rj-spandrel-left,
+.rj-spandrel-right {
+  position: absolute;
+  z-index: 1;
+  top: calc(121 * var(--s));
+  width: calc(340 * var(--s));
+  height: calc(272 * var(--s));
+}
+
+.rj-spandrel-left {
+  left: 0;
+}
+
+.rj-spandrel-right {
+  right: 0;
+  transform: scaleX(-1);
+}
+
+.rj-cloud-left,
+.rj-cloud-right {
+  position: absolute;
+  z-index: 1;
+}
+
+.rj-cloud-left {
+  left: calc(205 * var(--s));
+  top: calc(300 * var(--s));
+  width: calc(190 * var(--s));
+  height: calc(61 * var(--s));
+}
+
+.rj-cloud-right {
+  right: calc(225 * var(--s));
+  top: calc(242 * var(--s));
+  width: calc(150 * var(--s));
+  height: calc(48 * var(--s));
+  transform: scaleX(-1);
+}
+
+.rj-palace {
+  position: absolute;
+  z-index: 1;
+  right: 0;
+  bottom: calc(199 * var(--s));
+  width: calc(300 * var(--s));
+  height: calc(195 * var(--s));
+}
+
+.rj-dunes {
+  position: absolute;
+  z-index: 2;
+  left: 0;
+  bottom: calc(45 * var(--s));
+  width: 100%;
+  height: calc(190 * var(--s));
+}
+
+.rj-camel {
+  position: absolute;
+  z-index: 3;
+  left: calc(36 * var(--s));
+  bottom: calc(130 * var(--s));
+  width: calc(200 * var(--s));
+  height: calc(177 * var(--s));
+}
+
+.rj-border {
+  position: absolute;
+  z-index: 5;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: calc(50 * var(--s));
+  background-image: url("/rajasthan/border-floral.svg");
+  background-repeat: repeat-x;
+  background-size: auto 100%;
+}
+
+/* ---------------------------------------------------------------- cards */
+
+.rj-cards {
+  position: absolute;
+  z-index: 4;
+  top: calc(213 * var(--s) + var(--extra) / 2);
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  gap: calc(58 * var(--s));
+}
+
+.rj-card {
+  position: relative;
+  flex: none;
+  width: calc(521 * var(--s));
+  height: calc(563 * var(--s));
+  filter: drop-shadow(0 calc(8 * var(--s)) calc(12 * var(--s)) rgb(150 82 42 / 0.17));
+}
+
+.rj-frame {
+  position: absolute;
+  left: calc(-6 * var(--s));
+  top: calc(-6 * var(--s));
+  width: calc(533 * var(--s));
+  height: calc(575 * var(--s));
+  overflow: visible;
+}
+
+.rj-ornament {
+  position: absolute;
+  left: 50%;
+  top: calc(43 * var(--s));
+  width: calc(56 * var(--s));
+  height: calc(40 * var(--s));
+  transform: translateX(-50%);
+}
+
+.rj-icon {
+  position: absolute;
+  left: calc(228 * var(--s));
+  top: calc(115 * var(--s));
+  width: calc(68 * var(--s));
+  height: calc(49 * var(--s));
+}
+
+.rj-label {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: calc(186 * var(--s));
+  margin: 0;
+  font-family: var(--font-rj-label), Georgia, "Times New Roman", serif;
+  font-size: calc(36 * var(--s));
+  font-weight: 700;
+  line-height: 1;
+  letter-spacing: 0;
+  text-align: center;
+  white-space: nowrap;
+  color: #4b1b07;
+}
+
+.rj-rule {
+  position: absolute;
+  left: 50%;
+  top: calc(254.5 * var(--s));
+  width: calc(250 * var(--s));
+  height: calc(12 * var(--s));
+  transform: translateX(-50%);
+}
+
+.rj-value {
+  position: absolute;
+  left: calc(30 * var(--s));
+  right: calc(30 * var(--s));
+  top: calc(280 * var(--s));
+  height: calc(146 * var(--s));
+  margin: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: calc(156 * var(--s) * var(--fit, 1));
+  font-weight: 800;
+  line-height: 1;
+  font-variant-numeric: lining-nums;
+  white-space: nowrap;
+  color: #9a3130;
+}
+
+.rj-pavilion {
+  position: absolute;
+  left: 50%;
+  top: calc(441 * var(--s));
+  width: calc(390 * var(--s));
+  height: calc(112 * var(--s));
+  transform: translateX(-50%);
+}
+
+/* -------------------------------------------- portrait and narrow screens */
+
+/* Portrait screens: size from the width so the two cards still sit side by side; the
+   extra height is shared above and below them. */
+@media (max-aspect-ratio: 1/1) {
+  .rj-root {
+    --s: min(calc(100vw / 1300), calc(100vh / 920));
+  }
+}
+
+/* Narrow screens (phones): two cards side by side would be too small, so they stack and
+   the page scrolls. */
+@media (max-width: 699px) {
+  .rj-root {
+    --s: calc(100vw / 600);
+    --extra: 0px;
+    height: auto;
+    min-height: 100vh;
+    padding: calc(180 * var(--s)) 0 calc(270 * var(--s));
+    box-sizing: border-box;
+  }
+
+  .rj-cards {
+    position: relative;
+    top: auto;
+    left: auto;
+    transform: none;
+    flex-direction: column;
+    align-items: center;
+    gap: calc(48 * var(--s));
+  }
+
+  .rj-spandrel-left,
+  .rj-spandrel-right {
+    width: calc(190 * var(--s));
+    height: calc(152 * var(--s));
+  }
+
+  .rj-cloud-left,
+  .rj-cloud-right {
+    display: none;
+  }
+}

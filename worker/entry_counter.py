@@ -354,6 +354,9 @@ class CameraWorker(threading.Thread):
                 read_started = time.perf_counter()
                 ok, frame = cap.read()
                 read_seconds = time.perf_counter() - read_started
+                # Entry timestamp = when this frame arrived (UTC, explicit offset), not when
+                # inference finished. The API attributes it to an IST day from this value.
+                captured_at = utc_now_iso()
                 if not ok:
                     if is_file:
                         log.info("[%s] end of video file reached", name); break
@@ -392,7 +395,7 @@ class CameraWorker(threading.Thread):
                     if not in_roi(roi, centre):
                         continue                         # unrelated foot traffic outside the entrance area
                     if counter.update(tid, centre, frame_index):
-                        self.api.send_entry({"id": str(uuid.uuid4()), "occurredAt": utc_now_iso(), "camera": name, "trackId": tid})
+                        self.api.send_entry({"id": str(uuid.uuid4()), "occurredAt": captured_at, "camera": name, "trackId": tid})
                         with state.lock:
                             state.session_entries += 1
                             total = state.session_entries

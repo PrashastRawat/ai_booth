@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 56 40" width="56" height="40">
+  <!-- Small lotus bud with leaves, placed under the arch apex of each card. -->
+  <!-- leaves sweeping down and out -->
+  <path d="M26.6 29.4C20.6 23.6 11 22.6 3.4 27.4 9 33.6 19.4 34.8 26.6 29.4Z" fill="#7a8a4a"/>
+  <path d="M29.4 29.4C35.4 23.6 45 22.6 52.6 27.4 47 33.6 36.6 34.8 29.4 29.4Z" fill="#7a8a4a"/>
+  <path d="M25 29.2C19.2 26.6 12.6 26.2 6.6 28.2M31 29.2C36.8 26.6 43.4 26.2 49.4 28.2" fill="none" stroke="#b2b97f" stroke-width=".9" stroke-linecap="round"/>
+  <!-- gold stem and calyx curls -->
+  <path d="M28 22V37.4" stroke="#d39a44" stroke-width="1.5" stroke-linecap="round"/>
+  <path d="M22.4 31.2 28 37.4 33.6 31.2" fill="none" stroke="#d39a44" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/>
+  <!-- side petals curling outward -->
+  <path d="M27 23.6C20.4 22.6 15.6 17.4 16.4 10.6 18.6 9.2 20.6 10.4 21.2 12.4 22.6 16 24.4 19.6 27 23.6Z" fill="#df7566"/>
+  <path d="M29 23.6C35.6 22.6 40.4 17.4 39.6 10.6 37.4 9.2 35.4 10.4 34.8 12.4 33.4 16 31.6 19.6 29 23.6Z" fill="#df7566"/>
+  <!-- central bud -->
+  <path d="M28 1.6C33 7.6 34 16 28 24.4 22 16 23 7.6 28 1.6Z" fill="#c4433b"/>
+  <path d="M28 6.6C30.2 10.8 30.4 15.8 28 20.8" fill="none" stroke="#e98a78" stroke-width=".9" stroke-linecap="round"/>
+  <circle cx="16.2" cy="8.6" r="1.6" fill="#e48a7b"/>
+  <circle cx="39.8" cy="8.6" r="1.6" fill="#e48a7b"/>
+</svg>

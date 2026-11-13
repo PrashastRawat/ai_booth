@@ -1,0 +1,115 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 340 272" width="340" height="272">
+  <!-- Top-left spandrel of the large cusped arch below the header (y=0 is the header's
+       bottom edge). Mirror horizontally for the top-right spandrel. -->
+  <defs>
+    <linearGradient id="panel" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#f6cfa6"/>
+      <stop offset=".1" stop-color="#fad9b6"/>
+      <stop offset=".55" stop-color="#fde3c4"/>
+      <stop offset="1" stop-color="#fde8cd"/>
+    </linearGradient>
+    <linearGradient id="gold" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#e3a347"/>
+      <stop offset=".5" stop-color="#eaa94a"/>
+      <stop offset="1" stop-color="#e09a3e"/>
+    </linearGradient>
+    <symbol id="leaf" viewBox="-8 -3.6 16 7.2">
+      <path d="M-8 0C-4.5 -3.6 3.5 -3.6 8 0 3.5 3.6 -4.5 3.6 -8 0Z" fill="#6c8a4e"/>
+      <path d="M-7 0H6.5" stroke="#a7ba7a" stroke-width=".7"/>
+    </symbol>
+    <symbol id="leafLight" viewBox="-8 -3.6 16 7.2">
+      <path d="M-8 0C-4.5 -3.6 3.5 -3.6 8 0 3.5 3.6 -4.5 3.6 -8 0Z" fill="#88a263"/>
+      <path d="M-7 0H6.5" stroke="#c2cf95" stroke-width=".7"/>
+    </symbol>
+    <symbol id="bud" viewBox="-6 -8 12 16">
+      <path d="M0 -8C4 -4 4.4 2 0 8 -4.4 2 -4 -4 0 -8Z" fill="#e8807a"/>
+      <path d="M0 -3C2 -1 2 2 0 5" stroke="#cf5a58" stroke-width=".9" fill="none"/>
+    </symbol>
+  </defs>
+  <!-- outer glow on the sky side of the gold line -->
+  <path d="M332 0C270 7 216 39 213 81 140 79 103 114 103 151 55 153 18 189 14 249 13 256 10 262 0 266" fill="none" stroke="#fff3e8" stroke-opacity=".7" stroke-width="12"/>
+  <!-- panel -->
+  <path d="M0 0H332C270 7 216 39 213 81 140 79 103 114 103 151 55 153 18 189 14 249 13 256 10 262 0 266Z" fill="url(#panel)"/>
+  <!-- gold cusped outline with a fine highlight -->
+  <path d="M332 0C270 7 216 39 213 81 140 79 103 114 103 151 55 153 18 189 14 249 13 256 10 262 0 266" fill="none" stroke="url(#gold)" stroke-width="4.6"/>
+  <path d="M332 0C270 7 216 39 213 81 140 79 103 114 103 151 55 153 18 189 14 249 13 256 10 262 0 266" fill="none" stroke="#f8d08a" stroke-width="1.2" transform="translate(.8 .6)"/>
+  <!-- vines -->
+  <g fill="none" stroke-linecap="round">
+    <path d="M22 160C26 132 34 104 48 84 54 75 58 68 62 62" stroke="#6f8a50" stroke-width="1.4"/>
+    <path d="M95 50C120 42 146 38 168 39 188 38 206 31 222 23" stroke="#6f8a50" stroke-width="1.3"/>
+    <path d="M36 112C48 120 58 126 68 130M44 92C56 92 70 96 84 104M140 42C146 52 150 58 156 62M120 46C116 54 114 60 113 64" stroke="#6f8a50" stroke-width="1"/>
+  </g>
+  <!-- leaves -->
+  <use href="#leaf" x="102" y="20" width="20" height="9" transform="rotate(-30 110 23.6)"/>
+  <use href="#leafLight" x="116" y="27" width="20" height="9" transform="rotate(35 124 30.6)"/>
+  <use href="#leaf" x="128" y="20" width="20" height="9" transform="rotate(-38 136 23.6)"/>
+  <use href="#leafLight" x="146" y="27" width="20" height="9" transform="rotate(30 154 30.6)"/>
+  <use href="#leaf" x="184" y="22" width="20" height="9" transform="rotate(-22 192 25.6)"/>
+  <use href="#leafLight" x="202" y="17" width="20" height="9" transform="rotate(-36 210 20.6)"/>
+  <use href="#leaf" x="211" y="14" width="18.5" height="8.4" transform="rotate(-12 218.5 17.4)"/>
+  <use href="#leaf" x="20" y="64" width="20" height="9" transform="rotate(-62 28 67.6)"/>
+  <use href="#leafLight" x="29" y="88" width="20" height="9" transform="rotate(48 37 91.6)"/>
+  <use href="#leaf" x="20" y="98" width="20" height="9" transform="rotate(-70 28 101.6)"/>
+  <use href="#leaf" x="76" y="86" width="20" height="9" transform="rotate(40 84 89.6)"/>
+  <use href="#leafLight" x="62" y="96" width="18.5" height="8.4" transform="rotate(-24 69.5 99.4)"/>
+  <use href="#leaf" x="44" y="118" width="20" height="9" transform="rotate(-56 52 121.6)"/>
+  <use href="#leafLight" x="26" y="128" width="20" height="9" transform="rotate(64 34 131.6)"/>
+  <use href="#leaf" x="14" y="146" width="20" height="9" transform="rotate(-68 22 149.6)"/>
+  <use href="#leafLight" x="83" y="44" width="17" height="7.6" transform="rotate(20 90 47)"/>
+  <!-- buds -->
+  <use href="#bud" x="109" y="55" width="11" height="15" transform="rotate(10 114.5 62.5)"/>
+  <use href="#bud" x="56" y="100" width="11" height="15" transform="rotate(-25 61.5 107.5)"/>
+  <use href="#bud" x="62" y="122" width="10" height="14" transform="rotate(30 67 129)"/>
+  <use href="#bud" x="150" y="56" width="9" height="13" transform="rotate(20 154.5 62.5)"/>
+  <!-- large flower -->
+  <g transform="translate(67 49)">
+    <g fill="#e4727a">
+      <ellipse cy="-19" rx="8.6" ry="12.5"/>
+      <ellipse cy="-19" rx="8.6" ry="12.5" transform="rotate(30)"/>
+      <ellipse cy="-19" rx="8.6" ry="12.5" transform="rotate(60)"/>
+      <ellipse cy="-19" rx="8.6" ry="12.5" transform="rotate(90)"/>
+      <ellipse cy="-19" rx="8.6" ry="12.5" transform="rotate(120)"/>
+      <ellipse cy="-19" rx="8.6" ry="12.5" transform="rotate(150)"/>
+      <ellipse cy="-19" rx="8.6" ry="12.5" transform="rotate(180)"/>
+      <ellipse cy="-19" rx="8.6" ry="12.5" transform="rotate(210)"/>
+      <ellipse cy="-19" rx="8.6" ry="12.5" transform="rotate(240)"/>
+      <ellipse cy="-19" rx="8.6" ry="12.5" transform="rotate(270)"/>
+      <ellipse cy="-19" rx="8.6" ry="12.5" transform="rotate(300)"/>
+      <ellipse cy="-19" rx="8.6" ry="12.5" transform="rotate(330)"/>
+    </g>
+    <g fill="#d4535d">
+      <ellipse cy="-12" rx="6.2" ry="9" transform="rotate(15)"/>
+      <ellipse cy="-12" rx="6.2" ry="9" transform="rotate(75)"/>
+      <ellipse cy="-12" rx="6.2" ry="9" transform="rotate(135)"/>
+      <ellipse cy="-12" rx="6.2" ry="9" transform="rotate(195)"/>
+      <ellipse cy="-12" rx="6.2" ry="9" transform="rotate(255)"/>
+      <ellipse cy="-12" rx="6.2" ry="9" transform="rotate(315)"/>
+    </g>
+    <circle r="8.4" fill="#c4434d"/>
+    <circle r="6.4" fill="#f3c769"/>
+    <circle r="3.4" fill="#fbe8b0"/>
+  </g>
+  <!-- smaller flower -->
+  <g transform="translate(170 39)">
+    <g fill="#d9505a">
+      <ellipse cy="-9.4" rx="5.4" ry="7.6"/>
+      <ellipse cy="-9.4" rx="5.4" ry="7.6" transform="rotate(45)"/>
+      <ellipse cy="-9.4" rx="5.4" ry="7.6" transform="rotate(90)"/>
+      <ellipse cy="-9.4" rx="5.4" ry="7.6" transform="rotate(135)"/>
+      <ellipse cy="-9.4" rx="5.4" ry="7.6" transform="rotate(180)"/>
+      <ellipse cy="-9.4" rx="5.4" ry="7.6" transform="rotate(225)"/>
+      <ellipse cy="-9.4" rx="5.4" ry="7.6" transform="rotate(270)"/>
+      <ellipse cy="-9.4" rx="5.4" ry="7.6" transform="rotate(315)"/>
+    </g>
+    <circle r="5.6" fill="#be3e48"/>
+    <circle r="3.8" fill="#f2c25e"/>
+    <circle r="1.7" fill="#fbe6a4"/>
+  </g>
+  <!-- gold specks -->
+  <g fill="#e9b65c">
+    <circle cx="25" cy="34" r="2.2"/>
+    <circle cx="100" cy="72" r="1.6"/>
+    <circle cx="232" cy="26" r="2.6"/>
+    <circle cx="140" cy="62" r="1.4"/>
+  </g>
+</svg>

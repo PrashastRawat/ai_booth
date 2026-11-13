@@ -87,6 +87,95 @@ Each entry in `cameras` describes one entrance:
 
 Restart the worker after changing the config.
 
+## Event period – `.env.local`
+
+Total Visitors counts entries inside the event period. Create `.env.local` in
+the project folder (next to `package.json`):
+
+```
+EVENT_START_DATE=2026-11-14
+EVENT_END_DATE=2026-11-25
+```
+
+Both are IST calendar days and both are inclusive. Either one can be left out
+to leave that end open. With neither set, Total Visitors counts every stored
+entry, including test walk-throughs from setup days. Restart the Next.js app
+after changing the file. A malformed date makes `/api/stats` return an error
+(shown on the dashboard) rather than a wrong total.
+
+## Visitor counts
+
+Every count is a query over the stored entries. Nothing is reset or deleted
+at midnight, and restarting either process does not change any number.
+
+- **Today's Visitors**: entries whose timestamp falls on the current calendar
+  day in India Standard Time (`Asia/Kolkata`). The day's start and the next
+  day's start are converted to UTC and counted as
+  `occurred_at >= start AND occurred_at < nextStart`. This is recomputed on every
+  request, so the number goes back to 0 at 00:00 IST without a restart. The
+  Windows machine's own timezone setting is never used.
+- **Total Visitors**: entries inside the event period above. It never resets.
+
+`GET /api/stats` returns (values are examples):
+
+```json
+{
+  "todayVisitors": 25000,
+  "totalVisitors": 83000,
+  "timezone": "Asia/Kolkata",
+  "date": "2026-11-13",
+  "event": { "startDate": "2026-11-14", "endDate": "2026-11-25" },
+  "total": 83000,
+  "last5Minutes": 140,
+  "lastEntryAt": "2026-11-13T12:41:07.512Z",
+  "serverTime": "2026-11-13T12:41:09.004Z",
+  "workerOnline": true,
+  "cameras": [
+    { "name": "A", "todayVisitors": 12000, "totalVisitors": 41000, "entries": 41000, "last5Minutes": 70, "online": true, "...": "..." }
+  ]
+}
+```
+
+`total` and `cameras[].entries` are kept for older consumers and equal
+`totalVisitors`. All counts are 0 when the database is empty.
+
+`GET /api/stats/daily` returns visitors per IST day, split by camera:
+
+- With no parameters it covers the event period, or just today if none is set.
+- `?date=2026-11-13` returns one day.
+- `?from=2026-11-14&to=2026-11-25` returns a range of at most 366 days.
+
+### Timestamps and clock skew
+
+The worker stamps each entry with the time its camera frame arrived, as
+ISO 8601 UTC with an explicit offset (`2026-11-13T18:29:59.123+00:00`). The
+database stores it as `occurred_at`, in UTC epoch milliseconds, and the IST day
+is derived from that value. The server's own receive time is also stored, as
+`received_at`, for auditing.
+
+`POST /api/events` checks the timestamp:
+
+| Check | Result |
+|---|---|
+| Not ISO 8601, no `Z`/`+hh:mm` offset, or an impossible date/time (e.g. `2026-02-30`) | `400`, not stored |
+| More than **60 s ahead** of the server clock | `422`, not stored |
+| More than **24 h older** than the server clock | `422`, not stored |
+| Event ID already stored | `200` with `inserted: false`, counted once (checked before the age limit, so a late retry is still acknowledged) |
+| Otherwise | `201`, stored under its own timestamp |
+
+Why these limits:
+
+- The worker and the API run on the same PC with the same clock, so a
+  timestamp that is meaningfully in the future means a bug or a foreign client.
+- 24 h comfortably covers the worker's retry queue if the API is down for a while.
+- A late but valid event keeps its own timestamp. An entry at 23:59 IST that
+  reaches the API at 00:01 counts for the previous day: yesterday's figure goes
+  up by one and today's does not.
+
+The worker drops events the API rejects with `4xx` and logs an error.
+
+Keep Windows time synchronisation on, so the PC clock stays correct.
+
 ## Setting up the line
 
 1. Start both processes and open the dashboard.
@@ -103,10 +192,28 @@ Restart the worker after changing the config.
 
 ## Resetting counts
 
-Stop the Next.js app and delete the `data/` folder. It is recreated empty on
-the next start.
+Today's Visitors resets at midnight IST on its own. To leave out setup-day
+test entries, set `EVENT_START_DATE` (see above) rather than deleting data.
+
+To wipe everything: stop the Next.js app and delete the `data/` folder. It is
+recreated empty on the next start. **This permanently deletes all recorded
+entries.**
 
 ## Tests
+
+```powershell
+npm test
+```
+
+These cover the following:
+
+- IST day boundaries, including the 23:59:59.999 / 00:00 edge.
+- Timestamp and clock-skew validation.
+- The event period.
+- Duplicate IDs.
+- The midnight, restart and delayed-event scenarios.
+
+They run against throwaway SQLite databases, never `data/entries.db`.
 
 ```powershell
 cd worker
