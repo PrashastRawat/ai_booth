@@ -274,7 +274,7 @@
   left: calc(30 * var(--cu));
   right: calc(30 * var(--cu));
   top: calc(170 * var(--cu));
-  bottom: calc(14 * var(--cu));
+  bottom: calc(42 * var(--cu));
   margin: 0;
   display: flex;
   align-items: center;
@@ -285,6 +285,24 @@
   font-variant-numeric: lining-nums;
   white-space: nowrap;
   color: #a1161d;
+}
+
+/* Small line under the number, e.g. "Projected attendance". */
+.rj-caption {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: calc(16 * var(--cu));
+  margin: 0;
+  font-family: var(--font-rj-label), Georgia, "Times New Roman", serif;
+  font-size: calc(19 * var(--cu));
+  font-weight: 700;
+  line-height: 1;
+  letter-spacing: 0.04em;
+  text-align: center;
+  text-transform: uppercase;
+  white-space: nowrap;
+  color: #8a5a3a;
 }
 
 /* ---------------------------------------------------------------- cameras */

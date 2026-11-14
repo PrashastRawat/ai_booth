@@ -1,7 +1,7 @@
 import { NextResponse, connection } from "next/server";
 import { getDb } from "@/lib/db";
 import { eventScopeFromEnv, visitorSummary } from "@/lib/visitors";
-import { estimateSummary } from "@/lib/estimate";
+import { projectionSummary, touchProjection } from "@/lib/projection";
 
 const WORKER_TIMEOUT_MS = 5000;
 
@@ -42,8 +42,10 @@ export async function GET() {
   const db = getDb();
   const now = Date.now();
   const summary = visitorSummary(db, now, scope);
-  // Hourly-adjusted estimates (see src/lib/estimate.ts). Separate from the raw counts above.
-  const estimate = estimateSummary(db, now, scope);
+  // Synthetic hourly projection (see src/lib/projection.ts), kept separate from the actual
+  // camera counts above. Each poll also records that the system is alive.
+  touchProjection(db, now);
+  const projection = projectionSummary(db, now, scope);
 
   const statusRows = db
     .prepare("SELECT name, connected, feed_ok, fps, session_entries, updated_at FROM camera_status ORDER BY name")
@@ -73,9 +75,17 @@ export async function GET() {
   return NextResponse.json({
     todayVisitors: summary.todayVisitors,
     totalVisitors: summary.totalVisitors,
-    // Estimates, not verified unique-person counts. Raw counts above are unchanged.
-    estimatedTodayVisitors: estimate.estimatedTodayVisitors,
-    estimatedTotalVisitors: estimate.estimatedTotalVisitors,
+    // PROJECTED attendance = actual counts + synthetic hourly projection. Not camera-detected.
+    projectedTodayVisitors: summary.todayVisitors + projection.additionalToday,
+    projectedTotalVisitors: summary.totalVisitors + projection.additionalTotal,
+    projection: {
+      active: projection.active,
+      activeSince: projection.activeSince === null ? null : new Date(projection.activeSince).toISOString(),
+      activeTodaySeconds: Math.floor(projection.activeTodayMs / 1000),
+      additionalToday: projection.additionalToday,
+      additionalTotal: projection.additionalTotal,
+      perHour: 1000,
+    },
     timezone: summary.timezone,
     date: summary.date,
     event: { startDate: scope.startDate, endDate: scope.endDate },

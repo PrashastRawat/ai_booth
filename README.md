@@ -176,56 +176,51 @@ The worker drops events the API rejects with `4xx` and logs an error.
 
 Keep Windows time synchronisation on, so the PC clock stays correct.
 
-### Estimated (hourly-adjusted) counts
+### Projected attendance (synthetic hourly projection)
 
-`/api/stats` also returns `estimatedTodayVisitors` and `estimatedTotalVisitors`. These
-are **estimates, not verified unique-visitor counts**. The raw `todayVisitors` and
-`totalVisitors` are unchanged and remain the source of truth. No entry is ever
-changed, rejected or deleted to produce an estimate.
+`/api/stats` also returns `projectedTodayVisitors` and `projectedTotalVisitors`. These
+are the **actual counts plus a synthetic projection**. They are **not camera-detected
+visitors**.
 
-How each IST day's estimate is calculated:
+- `todayVisitors` and `totalVisitors` are unchanged.
+- They come only from recorded camera events.
+- They remain the source of truth.
+- Nothing synthetic is ever written to the `entries` table.
 
-1. **Threshold:** the first 1,000 entries of the day count as they are. Below 1,000,
-   the estimate equals the raw count.
-2. **Activation:** the timestamp of the day's 1,000th entry (T) starts hourly windows:
-   `[T, T+1h)`, `[T+1h, T+2h)`, and so on. The last window is cut off at IST midnight.
-   A new cycle starts every IST day.
-3. **Deduction:** each **completed** window with N entries contributes
-   `N − floor(N × rate)`, where the rate is:
+**Formula:** while a projection session is active, each IST day gets
 
-   | Entries in window | Rate |
-   |---|---|
-   | 0 | 0% |
-   | 1–999 | 5% |
-   | 1,000–1,499 | 10% |
-   | 1,500–1,999 | 15% |
-   | 2,000–2,499 | 20% |
-   | 2,500 or more | 25% (maximum) |
+`additional = floor(active seconds that day × 1,000 / 3,600)`
 
-   For example: 400 entries → 380, 1,000 → 900, 2,000 → 1,600, 3,000 → 2,250.
-4. **Current window:** the window still in progress counts unadjusted until it
-   closes. **The estimate can therefore drop when a window closes** and its
-   deduction is applied.
+That is 1,000 per active hour, added gradually (about 16–17 a minute) rather than in
+hourly jumps. For example: 1 min → 16, 10 min → 166, 30 min → 500, 60 min → 1,000,
+120 min → 2,000.
 
-The estimated total is the sum of the daily estimates over the event period. Each
-day applies its own 1,000-entry threshold.
+- `projectedTodayVisitors` = `todayVisitors` + today's additional.
+- `projectedTotalVisitors` = `totalVisitors` + the sum of each day's additional over
+  the event period.
 
-Nothing about the estimate is stored. It is recomputed from the stored event
-timestamps on every request, so:
+Today's additional resets at IST midnight.
 
-- restarts, outages and IST midnight need no special handling;
-- a window can never be deducted twice;
-- a late event is counted in the window and day it actually occurred in.
+**Sessions:**
 
-A late event that occurred before the 1,000th entry moves T, and the windows are
-recalculated from the new T.
+- Sessions are explicit: start and stop them from the admin dashboard at `/` (or with
+  `POST /api/projection {"action":"start"|"stop"}`).
+- Active periods are stored in the `projection_segments` table, so a restart neither
+  resets nor double-counts them.
+- Dashboard polls and worker heartbeats mark the system as alive. If neither arrives for
+  2 minutes, the system is treated as stopped: that gap is not counted and accrual resumes
+  when the system is back.
+- An active session therefore only accrues while the Next.js app is running **and** a
+  dashboard is open or the worker is running.
+- `GET /api/projection` lists the stored segments for auditing.
 
-`GET /api/stats/estimate?date=YYYY-MM-DD` (default: today) shows the audit breakdown
-for one day:
+**Display:**
 
-- the activation time;
-- each window's raw entries, rate, deduction and adjusted entries;
-- whether each window is complete.
+- `/rajasthan` shows the projected figures, each labelled "Projected attendance".
+- `/` shows actual and projected figures side by side, the additional projected
+  visitors, and the session status with a Start/Stop button.
+- Both dashboards refresh their figures every 30 seconds. Camera event ingestion is
+  still immediate.
 
 ## Setting up the line
 

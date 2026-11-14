@@ -1,6 +1,7 @@
 import { DatabaseSync } from "node:sqlite";
 import fs from "node:fs";
 import path from "node:path";
+import { initProjectionSchema } from "./projection.ts";
 
 // SQLite file lives in ./data so it survives restarts. Created on first use.
 const DB_PATH = path.join(process.cwd(), "data", "entries.db");
@@ -51,6 +52,8 @@ export function initSchema(db: DatabaseSync): void {
   // list of cameras is found with an index skip-scan. Measured on 5 lakh rows:
   // ~35 ms for all counts versus ~190 ms for GROUP BY camera over the time index.
   db.exec("CREATE INDEX IF NOT EXISTS idx_entries_camera_occurred ON entries (camera, occurred_at)");
+  // Projection session tables (separate from entries; see src/lib/projection.ts).
+  initProjectionSchema(db);
 }
 
 function openDatabase(): DatabaseSync {

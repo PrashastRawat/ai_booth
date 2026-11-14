@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { getDb } from "@/lib/db";
+import { touchProjection } from "@/lib/projection";
 
 const CAMERA_PATTERN = /^[A-Za-z0-9_-]{1,32}$/;
 
@@ -28,6 +29,8 @@ export async function POST(request: Request) {
        updated_at      = excluded.updated_at`,
   );
   const now = Date.now();
+  // A running worker keeps an active projection session alive (no camera data is changed).
+  touchProjection(getDb(), now);
   let count = 0;
   for (const [name, s] of Object.entries(cameras)) {
     if (!CAMERA_PATTERN.test(name) || !s || typeof s !== "object") continue;

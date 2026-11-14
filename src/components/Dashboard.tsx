@@ -19,9 +19,17 @@ type CameraStats = {
 type Stats = {
   todayVisitors: number;
   totalVisitors: number;
-  /** Hourly-adjusted estimates (see README "Estimated (hourly-adjusted) counts"). */
-  estimatedTodayVisitors?: number;
-  estimatedTotalVisitors?: number;
+  /** Actual + synthetic hourly projection (see README "Projected attendance"). Not camera-detected. */
+  projectedTodayVisitors?: number;
+  projectedTotalVisitors?: number;
+  projection?: {
+    active: boolean;
+    activeSince: string | null;
+    activeTodaySeconds: number;
+    additionalToday: number;
+    additionalTotal: number;
+    perHour: number;
+  };
   timezone: string;
   date: string;
   event: { startDate: string | null; endDate: string | null };
@@ -33,30 +41,8 @@ type Stats = {
   cameras: CameraStats[];
 };
 
-// Response of GET /api/stats/estimate (audit breakdown for today).
-type EstimateWindow = {
-  start: string;
-  end: string;
-  complete: boolean;
-  rawEntries: number;
-  adjustmentPercent: number;
-  deduction: number;
-  adjustedEntries: number;
-};
-
-type EstimateAudit = {
-  timezone: string;
-  date: string;
-  threshold: number;
-  rawVisitors: number;
-  estimatedVisitors: number;
-  activatedAt: string | null;
-  windows: EstimateWindow[];
-};
-
-const POLL_MS = 1500;
-// The hourly breakdown changes slowly; it is refreshed far less often than the counters.
-const AUDIT_POLL_MS = 30_000;
+// Displayed statistics refresh every 30 s. Ingestion of camera events is unaffected.
+const POLL_MS = 30_000;
 const PREVIEW_RETRY_MS = 10_000;
 // The worker serves its annotated previews on localhost only: <base>/stream/<camera>.
 const PREVIEW_BASE = process.env.NEXT_PUBLIC_PREVIEW_URL ?? "http://127.0.0.1:8765";
@@ -97,11 +83,11 @@ function StatusPill({ label, tone }: { label: string; tone: "good" | "bad" | "wa
   );
 }
 
-function StatCard({ title, value, hint, estimate }: { title: string; value: string; hint?: string; estimate?: boolean }) {
+function StatCard({ title, value, hint, projected }: { title: string; value: string; hint?: string; projected?: boolean }) {
   return (
     <div
       className={`rounded-2xl p-5 shadow-sm ring-1 ${
-        estimate
+        projected
           ? "bg-amber-50/60 ring-amber-200 dark:bg-amber-950/20 dark:ring-amber-900/60"
           : "bg-white ring-zinc-200 dark:bg-zinc-900 dark:ring-zinc-800"
       }`}
@@ -113,142 +99,59 @@ function StatCard({ title, value, hint, estimate }: { title: string; value: stri
   );
 }
 
-/**
- * Today's hourly adjustment breakdown from GET /api/stats/estimate, refreshed every
- * AUDIT_POLL_MS, whenever the IST date changes, and on demand. The last good result
- * stays visible if a refresh fails, with the error shown next to it.
- */
-function useEstimateAudit(date: string | undefined) {
-  const [audit, setAudit] = useState<EstimateAudit | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [loading, setLoading] = useState(false);
-  const [refreshKey, setRefreshKey] = useState(0);
-
-  useEffect(() => {
-    let cancelled = false;
-    const controller = new AbortController();
-
-    async function load() {
-      setLoading(true);
-      try {
-        const res = await fetch("/api/stats/estimate", { cache: "no-store", signal: controller.signal });
-        const body = await res.json().catch(() => null);
-        if (cancelled) return;
-        if (!res.ok || !body || !Array.isArray(body.windows)) {
-          setError(body?.error ?? `The estimate API returned HTTP ${res.status}.`);
-        } else {
-          setAudit(body as EstimateAudit);
-          setError(null);
-        }
-      } catch (err) {
-        if (!cancelled && !(err instanceof DOMException && err.name === "AbortError")) {
-          setError("Cannot reach the estimate API.");
-        }
-      } finally {
-        if (!cancelled) setLoading(false);
-      }
-    }
-
-    load();
-    const timer = setInterval(load, AUDIT_POLL_MS);
-    return () => {
-      cancelled = true;
-      clearInterval(timer);
-      controller.abort();
-    };
-  }, [date, refreshKey]);
-
-  return { audit, error, loading, refresh: () => setRefreshKey((k) => k + 1) };
+function formatDuration(seconds: number): string {
+  const h = Math.floor(seconds / 3600);
+  const m = Math.floor((seconds % 3600) / 60);
+  return h > 0 ? `${h} h ${m} min` : `${m} min`;
 }
 
-function HourlyBreakdown({ date }: { date: string | undefined }) {
-  const { audit, error, loading, refresh } = useEstimateAudit(date);
-  const tz = audit?.timezone;
-  const hasProvisional = audit?.windows.some((w) => !w.complete) ?? false;
+/** Start / stop the projection session (POST /api/projection), with a confirmation. */
+function ProjectionControl({ active, onChanged }: { active: boolean | undefined; onChanged: () => void }) {
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function send(action: "start" | "stop") {
+    const question =
+      action === "start"
+        ? "Start the projection session? Projected attendance will grow by 1,000 per active hour on top of actual counts."
+        : "Stop the projection session? Projected visitors added so far are kept; no more are added.";
+    if (!window.confirm(question)) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const res = await fetch("/api/projection", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action }),
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => null);
+        setError(body?.error ?? `HTTP ${res.status}`);
+      }
+    } catch {
+      setError("Cannot reach the API.");
+    } finally {
+      setBusy(false);
+      onChanged();
+    }
+  }
 
   return (
-    <section className="rounded-2xl bg-white shadow-sm ring-1 ring-zinc-200 dark:bg-zinc-900 dark:ring-zinc-800">
-      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-zinc-200 px-5 py-3 dark:border-zinc-800">
-        <div>
-          <h2 className="text-sm font-medium">Hourly adjustment · {audit ? `${formatDay(audit.date)} (IST)` : "today"}</h2>
-          <p className="text-xs text-zinc-500 dark:text-zinc-400">
-            Estimate only. Raw counts are never changed. Refreshes every 30 s.
-          </p>
-        </div>
-        <button
-          type="button"
-          onClick={refresh}
-          disabled={loading}
-          className="rounded-lg px-3 py-1.5 text-sm font-medium ring-1 ring-zinc-300 hover:bg-zinc-100 disabled:opacity-50 dark:ring-zinc-700 dark:hover:bg-zinc-800"
-        >
-          {loading ? "Refreshing…" : "Refresh"}
-        </button>
-      </div>
-
-      {error && (
-        <p role="alert" className="border-b border-zinc-200 px-5 py-2 text-sm text-rose-700 dark:border-zinc-800 dark:text-rose-300">
-          {error}
-          {audit ? " Showing the last loaded breakdown." : ""}
-        </p>
-      )}
-
-      {!audit ? (
-        <p className="px-5 py-6 text-sm text-zinc-500 dark:text-zinc-400">{error ? "No breakdown available." : "Loading…"}</p>
-      ) : audit.activatedAt === null ? (
-        <p className="px-5 py-6 text-sm text-zinc-500 dark:text-zinc-400">
-          Adjustment not active yet: {audit.rawVisitors.toLocaleString()} of the first {audit.threshold.toLocaleString()} entries
-          today. Until the threshold is reached the estimate equals the raw count.
-        </p>
-      ) : (
-        <>
-          <p className="px-5 pt-4 text-sm text-zinc-600 dark:text-zinc-300">
-            Activated at {formatTime(audit.activatedAt, tz)} IST by the {audit.threshold.toLocaleString()}th entry. Raw{" "}
-            {audit.rawVisitors.toLocaleString()} → estimated {audit.estimatedVisitors.toLocaleString()} (the first{" "}
-            {audit.threshold.toLocaleString()} entries are never adjusted).
-          </p>
-          <div className="overflow-x-auto px-5 py-4">
-            <table className="w-full min-w-[640px] text-left text-sm tabular-nums">
-              <thead className="text-xs uppercase tracking-wide text-zinc-500 dark:text-zinc-400">
-                <tr>
-                  <th className="py-2 pr-4 font-medium">Window (IST)</th>
-                  <th className="py-2 pr-4 text-right font-medium">Raw entries</th>
-                  <th className="py-2 pr-4 text-right font-medium">Adjustment</th>
-                  <th className="py-2 pr-4 text-right font-medium">Deducted</th>
-                  <th className="py-2 pr-4 text-right font-medium">Estimated</th>
-                  <th className="py-2 font-medium">Status</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-zinc-100 dark:divide-zinc-800">
-                {audit.windows.map((w) => (
-                  <tr key={w.start} className={w.complete ? "" : "bg-amber-50/70 dark:bg-amber-950/20"}>
-                    <td className="py-2 pr-4">
-                      {formatTime(w.start, tz)} – {formatTime(w.end, tz)}
-                    </td>
-                    <td className="py-2 pr-4 text-right">{w.rawEntries.toLocaleString()}</td>
-                    <td className="py-2 pr-4 text-right">{w.adjustmentPercent}%</td>
-                    <td className="py-2 pr-4 text-right">{w.complete ? w.deduction.toLocaleString() : "—"}</td>
-                    <td className="py-2 pr-4 text-right">{w.adjustedEntries.toLocaleString()}</td>
-                    <td className="py-2">
-                      {w.complete ? (
-                        <span className="text-zinc-600 dark:text-zinc-300">Completed</span>
-                      ) : (
-                        <span className="font-medium text-amber-800 dark:text-amber-300">In progress · provisional</span>
-                      )}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-            {hasProvisional && (
-              <p className="mt-3 text-xs text-zinc-500 dark:text-zinc-400">
-                The window in progress counts unadjusted. Its deduction is applied only when the hour closes, so the estimate can
-                drop at that moment.
-              </p>
-            )}
-          </div>
-        </>
-      )}
-    </section>
+    <div className="flex flex-col items-start gap-1">
+      <button
+        type="button"
+        disabled={busy || active === undefined}
+        onClick={() => send(active ? "stop" : "start")}
+        className={`rounded-lg px-3 py-1.5 text-sm font-medium ring-1 disabled:opacity-50 ${
+          active
+            ? "text-rose-700 ring-rose-300 hover:bg-rose-50 dark:text-rose-300 dark:ring-rose-800 dark:hover:bg-rose-950"
+            : "text-emerald-700 ring-emerald-300 hover:bg-emerald-50 dark:text-emerald-300 dark:ring-emerald-800 dark:hover:bg-emerald-950"
+        }`}
+      >
+        {busy ? "Working…" : active ? "Stop projection" : "Start projection"}
+      </button>
+      {error && <p className="text-xs text-rose-700 dark:text-rose-300">{error}</p>}
+    </div>
   );
 }
 
@@ -296,6 +199,8 @@ function CameraPanel({ name, cam, haveStats, now }: { name: string; cam: CameraS
 export default function Dashboard() {
   const [stats, setStats] = useState<Stats | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // Bumped after a projection start/stop to refresh immediately instead of in up to 30 s.
+  const [pollKey, setPollKey] = useState(0);
 
   useEffect(() => {
     let cancelled = false;
@@ -330,20 +235,17 @@ export default function Dashboard() {
       clearInterval(timer);
       controller?.abort();
     };
-  }, []);
+  }, [pollKey]);
 
   const cameraNames = [...new Set([...EXPECTED_CAMERAS, ...(stats?.cameras.map((c) => c.name) ?? [])])].sort();
   const byName = (name: string) => stats?.cameras.find((c) => c.name === name);
   const haveStats = stats !== null;
   const now = stats ? Date.parse(stats.serverTime) : 0;
 
-  // Estimates from /api/stats; null when unavailable, so nothing is ever made up.
-  const estToday = typeof stats?.estimatedTodayVisitors === "number" ? stats.estimatedTodayVisitors : null;
-  const estTotal = typeof stats?.estimatedTotalVisitors === "number" ? stats.estimatedTotalVisitors : null;
-  // Effective deduction across all of today's entries (not the latest window's rate).
-  const todayDeduction = stats && estToday !== null ? stats.todayVisitors - estToday : null;
-  const deductionPct =
-    stats && todayDeduction !== null ? (stats.todayVisitors > 0 ? (todayDeduction / stats.todayVisitors) * 100 : 0) : null;
+  // Projection from /api/stats; null when unavailable, so nothing is ever made up.
+  const projection = stats?.projection;
+  const projToday = typeof stats?.projectedTodayVisitors === "number" ? stats.projectedTodayVisitors : null;
+  const projTotal = typeof stats?.projectedTotalVisitors === "number" ? stats.projectedTotalVisitors : null;
 
   return (
     <div className="min-h-screen bg-zinc-50 px-4 py-8 font-sans text-zinc-950 dark:bg-black dark:text-zinc-50 sm:px-8">
@@ -352,7 +254,7 @@ export default function Dashboard() {
           <div>
             <h1 className="text-2xl font-semibold tracking-tight">Entrance counter</h1>
             <p className="text-sm text-zinc-500 dark:text-zinc-400">
-              Live entries across all entrances · updates every 1.5 s
+              Live entries across all entrances · display refreshes every 30 s
               {stats ? ` · ${stats.last5Minutes.toLocaleString()} in the last 5 minutes` : ""}
             </p>
           </div>
@@ -402,32 +304,47 @@ export default function Dashboard() {
           </div>
         </section>
 
-        <section aria-labelledby="estimate-heading" className="flex flex-col gap-3">
-          <h2 id="estimate-heading" className="text-sm font-semibold uppercase tracking-wide text-amber-800 dark:text-amber-300">
-            Estimated counts{" "}
+        <section aria-labelledby="projection-heading" className="flex flex-col gap-3">
+          <h2 id="projection-heading" className="text-sm font-semibold uppercase tracking-wide text-amber-800 dark:text-amber-300">
+            Projected attendance{" "}
             <span className="font-normal normal-case tracking-normal text-zinc-500">
-              · hourly-adjusted estimate, not verified unique visitors
+              · actual counts + 1,000 synthetic visitors per active session hour; not camera-detected
             </span>
           </h2>
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-            <StatCard estimate title="Estimated Today's Visitors" value={estToday !== null ? estToday.toLocaleString() : "—"} />
-            <StatCard estimate title="Estimated Total Visitors" value={estTotal !== null ? estTotal.toLocaleString() : "—"} />
             <StatCard
-              estimate
-              title="Today's deduction"
-              value={todayDeduction !== null ? todayDeduction.toLocaleString() : "—"}
-              hint="Actual today − estimated today"
+              projected
+              title="Projected Today's Visitors"
+              value={projToday !== null ? projToday.toLocaleString() : "—"}
+              hint="Shown on /rajasthan, labelled as projected"
             />
+            <StatCard projected title="Projected Total Visitors" value={projTotal !== null ? projTotal.toLocaleString() : "—"} />
             <StatCard
-              estimate
-              title="Effective deduction %"
-              value={deductionPct !== null ? `${deductionPct.toFixed(1)}%` : "—"}
-              hint="Of all of today's entries (not the latest window's rate)"
+              projected
+              title="Additional projected visitors"
+              value={projection ? projection.additionalToday.toLocaleString() : "—"}
+              hint={projection ? `Today · ${projection.additionalTotal.toLocaleString()} in total` : undefined}
             />
+            <div className="rounded-2xl bg-amber-50/60 p-5 shadow-sm ring-1 ring-amber-200 dark:bg-amber-950/20 dark:ring-amber-900/60">
+              <p className="text-sm font-medium text-zinc-500 dark:text-zinc-400">Projection session</p>
+              <div className="mt-2 flex items-center gap-2">
+                {projection ? (
+                  <StatusPill label={projection.active ? "Active" : "Stopped"} tone={projection.active ? "good" : "warn"} />
+                ) : (
+                  <span className="text-2xl font-semibold">—</span>
+                )}
+              </div>
+              <p className="mt-2 text-sm text-zinc-500 dark:text-zinc-400">
+                {projection
+                  ? `${projection.active && projection.activeSince ? `Running since ${formatTime(projection.activeSince, stats?.timezone)} · ` : ""}${formatDuration(projection.activeTodaySeconds)} active today`
+                  : "Status unavailable"}
+              </p>
+              <div className="mt-3">
+                <ProjectionControl active={projection?.active} onChanged={() => setPollKey((k) => k + 1)} />
+              </div>
+            </div>
           </div>
         </section>
-
-        <HourlyBreakdown date={stats?.date} />
 
         <section className="grid grid-cols-1 gap-4 lg:grid-cols-2">
           {cameraNames.map((name) => (

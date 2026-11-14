@@ -45,9 +45,9 @@ function fitScale(text: string): number {
   return Math.min(1, MAX_INK_EM / Math.max(advance - OUTER_BEARINGS_EM, 0.01));
 }
 
-type Props = { id: string; label: string; value: number | null };
+type Props = { id: string; label: string; value: number | null; /** Small line under the number, e.g. "Projected attendance". */ caption?: string };
 
-export default function VisitorCounterCard({ id, label, value }: Props) {
+export default function VisitorCounterCard({ id, label, value, caption }: Props) {
   // Short display form (12.4K, truncated); the exact raw count stays in the data and tooltip.
   const text = value === null ? "—" : formatVisitors(value);
   const exact = value === null ? undefined : exactFormatter.format(value);
@@ -86,6 +86,7 @@ export default function VisitorCounterCard({ id, label, value }: Props) {
       <p className="rj-value" style={{ "--fit": fitScale(text) } as CSSProperties} title={exact}>
         {value === null ? text : <data value={value}>{text}</data>}
       </p>
+      {caption && <p className="rj-caption">{caption}</p>}
     </section>
   );
 }
