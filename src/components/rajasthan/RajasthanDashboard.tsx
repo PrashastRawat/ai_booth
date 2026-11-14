@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import CameraPanel from "./CameraPanel";
 import RajasthanDecorations from "./RajasthanDecorations";
 import RajasthanHeader from "./RajasthanHeader";
+import RajasthanHeading from "./RajasthanHeading";
 import VisitorCounterCard from "./VisitorCounterCard";
 import "./RajasthanDashboard.css";
 
@@ -83,12 +84,13 @@ export default function RajasthanDashboard({ fontClassName }: { fontClassName?: 
     <div className={`rj-root ${fontClassName ?? ""}`}>
       <RajasthanHeader />
       <RajasthanDecorations />
-      {/* Two-column grid: counters on the first row, the two entrance cameras on the second. */}
+      {/* Grid rows: heading plaque, the two counters, the two entrance cameras. */}
       <main className="rj-main">
+        <RajasthanHeading />
         <div className="rj-counters">
           {/* Synthetic projection is never shown without saying so. */}
-          <VisitorCounterCard id="today" label="Today’s Visitors" value={stats?.today ?? null} caption={stats?.projected ? "Projected attendance" : undefined} />
-          <VisitorCounterCard id="total" label="Total Visitors" value={stats?.total ?? null} caption={stats?.projected ? "Projected attendance" : undefined} />
+          <VisitorCounterCard id="today" label="Today’s Visitors" value={stats?.today ?? null} minDigits={4} caption={stats?.projected ? "Projected attendance" : undefined} />
+          <VisitorCounterCard id="total" label="Total Visitors" value={stats?.total ?? null} minDigits={5} caption={stats?.projected ? "Projected attendance" : undefined} />
         </div>
         {CAMERAS.map((name) => (
           <CameraPanel

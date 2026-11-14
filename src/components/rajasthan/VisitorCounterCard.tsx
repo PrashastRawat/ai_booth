@@ -1,8 +1,7 @@
 import Image from "next/image";
-import type { CSSProperties } from "react";
-import { formatVisitors } from "@/lib/formatVisitors";
+import Odometer from "./Odometer";
 
-// Exact value with Indian grouping (1,25,000), shown as a tooltip next to the short form.
+// Exact value with Indian grouping (1,25,000), shown as a tooltip on the counter.
 const exactFormatter = new Intl.NumberFormat("en-IN");
 
 // Card size in layout units; must match .rj-card in RajasthanDashboard.css.
@@ -26,30 +25,17 @@ function archPath(h: number): string {
 }
 const ARCH_PATH = archPath(CARD_H);
 
-// Advance widths (em) of Playfair Display ExtraBold, measured in the browser.
-const ADVANCE_EM: Record<string, number> = {
-  "0": 0.701, "1": 0.49, "2": 0.627, "3": 0.625, "4": 0.649,
-  "5": 0.599, "6": 0.648, "7": 0.554, "8": 0.676, "9": 0.648, ",": 0.328,
-  ".": 0.3, K: 0.8, M: 1.0, // approximate; only used to decide whether to shrink
+type Props = {
+  id: string;
+  label: string;
+  value: number | null;
+  /** Small line under the counter, e.g. "Projected attendance". */
+  caption?: string;
+  /** Minimum wheels on the mechanical counter (leading zeros), like a real odometer. */
+  minDigits?: number;
 };
-// The glyphs' outer side bearings (about 0.45 em in total) are blank space.
-const OUTER_BEARINGS_EM = 0.45;
-// Ink width available inside the card at full size: 461 of the card's 521 units, with the
-// number set at 185 card units/em (.rj-value font-size in RajasthanDashboard.css).
-const MAX_INK_EM = 461 / 185;
 
-/** Shrinks the number only when its ink would be wider than the card (e.g. 1,25,000). */
-function fitScale(text: string): number {
-  let advance = 0;
-  for (const ch of text) advance += ADVANCE_EM[ch] ?? 0.6;
-  return Math.min(1, MAX_INK_EM / Math.max(advance - OUTER_BEARINGS_EM, 0.01));
-}
-
-type Props = { id: string; label: string; value: number | null; /** Small line under the number, e.g. "Projected attendance". */ caption?: string };
-
-export default function VisitorCounterCard({ id, label, value, caption }: Props) {
-  // Short display form (12.4K, truncated); the exact raw count stays in the data and tooltip.
-  const text = value === null ? "—" : formatVisitors(value);
+export default function VisitorCounterCard({ id, label, value, caption, minDigits = 4 }: Props) {
   const exact = value === null ? undefined : exactFormatter.format(value);
   const fillId = `rj-card-fill-${id}`;
   const clipId = `rj-card-clip-${id}`;
@@ -83,9 +69,9 @@ export default function VisitorCounterCard({ id, label, value, caption }: Props)
         {label}
       </h2>
       <Image className="rj-rule" src="/rajasthan/divider.svg" alt="" aria-hidden width={250} height={12} loading="eager" />
-      <p className="rj-value" style={{ "--fit": fitScale(text) } as CSSProperties} title={exact}>
-        {value === null ? text : <data value={value}>{text}</data>}
-      </p>
+      <div className="rj-odo-wrap" title={exact}>
+        {value === null ? <span className="rj-odo-empty">—</span> : <Odometer value={value} minDigits={minDigits} />}
+      </div>
       {caption && <p className="rj-caption">{caption}</p>}
     </section>
   );

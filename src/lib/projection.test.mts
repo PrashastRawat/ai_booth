@@ -7,7 +7,7 @@ import { DatabaseSync } from "node:sqlite";
 import { initSchema } from "./db.ts";
 import { parseEventScope } from "./time.ts";
 import { visitorSummary } from "./visitors.ts";
-import { GAP_MS, projectedIncrement, projectionSummary, startProjection, stopProjection, touchProjection } from "./projection.ts";
+import { GAP_MS, projectedIncrement, projectionSummary, touchProjection } from "./projection.ts";
 
 const OPEN = parseEventScope(null, null);
 const MIN = 60_000;
@@ -24,7 +24,8 @@ function ist(y: number, mo: number, d: number, h: number, mi = 0): number {
   return Date.UTC(y, mo - 1, d, h, mi) - 330 * MIN;
 }
 
-/** Simulates the system running from `from` to `to`: a dashboard poll every 30 s. */
+/** Simulates the system running from `from` to `to`: a dashboard poll every 30 s.
+ *  The first poll auto-starts the session; there is no manual start. */
 function runAlive(db: DatabaseSync, from: number, to: number) {
   for (let t = from; t <= to; t += 30_000) touchProjection(db, t);
   touchProjection(db, to);
@@ -41,25 +42,32 @@ test("formula: floor(elapsed x 1000 / 60 min), cumulative", () => {
   assert.equal(projectedIncrement(-5000), 0);
 });
 
-test("no session: nothing is projected", () => {
-  const db = memoryDb();
-  runAlive(db, T0, T0 + H);
-  const s = projectionSummary(db, T0 + H, OPEN);
+test("never touched: nothing is projected", () => {
+  const s = projectionSummary(memoryDb(), T0 + H, OPEN);
   assert.deepEqual([s.active, s.additionalToday, s.additionalTotal], [false, 0, 0]);
+});
+
+test("auto-start: the first poll opens the session, no manual start needed", () => {
+  const db = memoryDb();
+  touchProjection(db, T0);
+  const s = projectionSummary(db, T0, OPEN);
+  assert.deepEqual([s.active, s.activeSince, s.additionalToday], [true, T0, 0]);
+  // A second touch does not open another session.
+  touchProjection(db, T0 + 30_000);
+  const n = (db.prepare("SELECT COUNT(*) AS n FROM projection_segments").get() as { n: number | bigint }).n;
+  assert.equal(Number(n), 1);
 });
 
 test("increases gradually, 1,000 after one active hour and 2,000 after two", () => {
   const db = memoryDb();
-  startProjection(db, T0);
   const seen: number[] = [];
   for (const m of [1, 10, 20, 30, 45, 60, 90, 120]) {
-    runAlive(db, T0 + (m === 1 ? 0 : 0), T0 + m * MIN);
+    runAlive(db, T0, T0 + m * MIN);
     seen.push(additionalToday(db, T0 + m * MIN));
   }
   assert.deepEqual(seen, [16, 166, 333, 500, 750, 1000, 1500, 2000]);
   // Never a jump: between consecutive 30 s polls it grows by at most 9.
   const db2 = memoryDb();
-  startProjection(db2, T0);
   let prev = 0;
   for (let t = T0; t <= T0 + H; t += 30_000) {
     touchProjection(db2, t);
@@ -70,29 +78,12 @@ test("increases gradually, 1,000 after one active hour and 2,000 after two", () 
   assert.equal(prev, 1000);
 });
 
-test("start is idempotent; stop keeps what accrued and stops accruing", () => {
-  const db = memoryDb();
-  startProjection(db, T0);
-  runAlive(db, T0, T0 + 30 * MIN);
-  startProjection(db, T0 + 30 * MIN); // already active: no new session, no reset
-  assert.equal(additionalToday(db, T0 + 30 * MIN), 500);
-  stopProjection(db, T0 + 30 * MIN);
-  runAlive(db, T0 + 30 * MIN, T0 + 3 * H);
-  const s = projectionSummary(db, T0 + 3 * H, OPEN);
-  assert.deepEqual([s.active, s.additionalToday], [false, 500]);
-  stopProjection(db, T0 + 3 * H); // no-op
-  startProjection(db, T0 + 3 * H);
-  runAlive(db, T0 + 3 * H, T0 + 3 * H + 30 * MIN);
-  assert.equal(additionalToday(db, T0 + 3 * H + 30 * MIN), 1000);
-});
-
 test("restart does not reset or double-count", () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "projection-test-"));
   const file = path.join(dir, "entries.db");
   try {
     let db = new DatabaseSync(file);
     initSchema(db);
-    startProjection(db, T0);
     runAlive(db, T0, T0 + 30 * MIN);
     const before = projectionSummary(db, T0 + 30 * MIN, OPEN);
     db.close();
@@ -104,8 +95,10 @@ test("restart does not reset or double-count", () => {
     assert.deepEqual([before.additionalToday, after.additionalToday, after.active], [500, 500, true]);
     runAlive(db, T0 + 31 * MIN, T0 + 60 * MIN);
     assert.equal(additionalToday(db, T0 + 60 * MIN), 1000);
-    // Recomputing again never adds more.
+    // Recomputing again never adds more, and still exactly one open segment exists.
     assert.equal(additionalToday(db, T0 + 60 * MIN), 1000);
+    const open = (db.prepare("SELECT COUNT(*) AS n FROM projection_segments WHERE ended_at IS NULL").get() as { n: number | bigint }).n;
+    assert.equal(Number(open), 1);
     db.close();
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
@@ -114,12 +107,11 @@ test("restart does not reset or double-count", () => {
 
 test("projection does not increase while the system is stopped", () => {
   const db = memoryDb();
-  startProjection(db, T0);
   runAlive(db, T0, T0 + 30 * MIN); // running 30 min
   // System down for 2 hours: no polls, no heartbeats.
   const down = projectionSummary(db, T0 + 2 * H, OPEN);
   assert.deepEqual([down.additionalToday, down.active], [500, false]);
-  // Back up: accrues again from the restart, the gap is excluded.
+  // Back up: accrues again from the restart, the gap is excluded (not added retroactively).
   runAlive(db, T0 + 2 * H + 30 * MIN, T0 + 3 * H);
   assert.equal(additionalToday(db, T0 + 3 * H), 1000);
   assert.ok(GAP_MS <= 2 * MIN);
@@ -128,7 +120,6 @@ test("projection does not increase while the system is stopped", () => {
 test("IST midnight resets today's projection; total keeps both days", () => {
   const db = memoryDb();
   const start = ist(2026, 11, 14, 23, 30);
-  startProjection(db, start);
   runAlive(db, start, start + H); // 23:30 -> 00:30 IST
   const s = projectionSummary(db, start + H, OPEN);
   assert.deepEqual([s.additionalToday, s.additionalTotal], [500, 1000]);
@@ -140,9 +131,7 @@ test("total accumulates across days and respects the event scope", () => {
   const db = memoryDb();
   for (const d of [13, 14, 15]) {
     const s = ist(2026, 11, d, 10, 0);
-    startProjection(db, s);
-    runAlive(db, s, s + 2 * H);
-    stopProjection(db, s + 2 * H);
+    runAlive(db, s, s + 2 * H); // each day: 2 h alive, then silence until the next day
   }
   const now = ist(2026, 11, 15, 18, 0);
   assert.equal(projectionSummary(db, now, OPEN).additionalTotal, 6000);
@@ -150,10 +139,19 @@ test("total accumulates across days and respects the event scope", () => {
   assert.equal(projectionSummary(db, now, parseEventScope("2026-11-14", null)).additionalTotal, 4000);
 });
 
+test("overlapping segments are merged, never counted twice", () => {
+  const db = memoryDb();
+  // Simulate a corrupt/duplicated state: two overlapping closed segments.
+  const ins = db.prepare("INSERT INTO projection_segments (started_at, ended_at) VALUES (?, ?)");
+  ins.run(T0, T0 + 60 * MIN);
+  ins.run(T0 + 20 * MIN, T0 + 80 * MIN); // overlaps the first by 40 min
+  // Union is [T0, T0+80min] = 80 active minutes, not 120.
+  assert.equal(additionalToday(db, T0 + 2 * H), Math.floor((80 * 60 * 1000) / 3600));
+});
+
 test("actual camera counts are untouched: no rows written to entries", () => {
   const db = memoryDb();
   db.prepare("INSERT INTO entries (id, occurred_at, track_id, received_at, camera) VALUES (?, ?, ?, ?, ?)").run("real-entry-0001", T0, 1, T0, "A");
-  startProjection(db, T0);
   runAlive(db, T0, T0 + 2 * H);
   const actual = visitorSummary(db, T0 + 2 * H, OPEN);
   assert.deepEqual([actual.todayVisitors, actual.totalVisitors], [1, 1]);

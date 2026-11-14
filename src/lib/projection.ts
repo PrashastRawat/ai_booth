@@ -6,11 +6,12 @@
 // i.e. 1,000 per hour of active projection session, accruing smoothly (about 16.7 per
 // minute) rather than in hourly jumps. Nothing is written to the `entries` table.
 //
-// Sessions are explicit: an admin starts and stops them (POST /api/projection). Active
-// time is stored as segments in SQLite, so restarts neither reset nor double-count it.
-// So that nothing accrues while the system is shut down, every dashboard poll and worker
-// heartbeat "touches" the session; if nothing touched it for GAP_MS, the open segment is
-// closed at the last moment the system was seen alive and a new one starts now.
+// Sessions are AUTOMATIC: the first dashboard poll or worker heartbeat opens one, and
+// every later poll/heartbeat "touches" it. Active time is stored as segments in SQLite,
+// so restarts neither reset nor double-count it. So that nothing accrues while the
+// system is shut down (no open dashboard and no running worker), a session that was not
+// touched for GAP_MS is treated as stopped at the last moment the system was seen
+// alive; the next touch excludes the gap and resumes in a new segment.
 import type { DatabaseSync } from "node:sqlite";
 import { EVENT_TIMEZONE, addDays, dayRangeUtc, zonedDate, type EventScope } from "./time.ts";
 
@@ -70,38 +71,33 @@ function setLastSeen(db: DatabaseSync, t: number): void {
  */
 export function touchProjection(db: DatabaseSync, nowMs: number): void {
   const open = openSegment(db);
-  if (!open) return;
-  const seen = lastSeen(db) ?? open.start;
-  if (nowMs - seen > GAP_MS) {
-    db.exec("BEGIN");
-    try {
-      db.prepare("UPDATE projection_segments SET ended_at = ? WHERE id = ?").run(Math.max(seen, open.start), open.id);
+  // Most worker heartbeats need no write. Delayed requests must not move the
+  // persisted activity timestamp backwards either.
+  if (open && nowMs - (lastSeen(db) ?? open.start) < TOUCH_WRITE_MS) return;
+
+  // Lock BEFORE checking for an open session: Next.js processes/connections can
+  // race even though DatabaseSync calls within a single process are synchronous.
+  // Re-read after acquiring the lock so a competing request cannot start a second
+  // session, or resume the same stale session twice.
+  db.exec("BEGIN IMMEDIATE");
+  try {
+    const current = openSegment(db);
+    const seen = current ? lastSeen(db) ?? current.start : null;
+    if (!current) {
       db.prepare("INSERT INTO projection_segments (started_at, ended_at) VALUES (?, NULL)").run(nowMs);
       setLastSeen(db, nowMs);
-      db.exec("COMMIT");
-    } catch (err) {
-      db.exec("ROLLBACK");
-      throw err;
+    } else if (seen !== null && nowMs - seen > GAP_MS) {
+      db.prepare("UPDATE projection_segments SET ended_at = ? WHERE id = ?").run(Math.max(seen, current.start), current.id);
+      db.prepare("INSERT INTO projection_segments (started_at, ended_at) VALUES (?, NULL)").run(nowMs);
+      setLastSeen(db, nowMs);
+    } else if (seen !== null && nowMs - seen >= TOUCH_WRITE_MS) {
+      setLastSeen(db, nowMs);
     }
-  } else if (nowMs - seen >= TOUCH_WRITE_MS) {
-    setLastSeen(db, nowMs);
+    db.exec("COMMIT");
+  } catch (err) {
+    db.exec("ROLLBACK");
+    throw err;
   }
-}
-
-/** Starts a projection session (no-op if one is already active). */
-export function startProjection(db: DatabaseSync, nowMs: number): void {
-  touchProjection(db, nowMs);
-  if (openSegment(db)) return;
-  db.prepare("INSERT INTO projection_segments (started_at, ended_at) VALUES (?, NULL)").run(nowMs);
-  setLastSeen(db, nowMs);
-}
-
-/** Stops the active projection session (no-op if none). Accrued projection is kept. */
-export function stopProjection(db: DatabaseSync, nowMs: number): void {
-  touchProjection(db, nowMs);
-  const open = openSegment(db);
-  if (!open) return;
-  db.prepare("UPDATE projection_segments SET ended_at = ? WHERE id = ?").run(Math.max(nowMs, open.start), open.id);
 }
 
 /** All segments with the open one ending at `nowMs`, or at the last time seen if stale. */
@@ -116,18 +112,28 @@ function segments(db: DatabaseSync, nowMs: number): Segment[] {
     const start = num(r.started_at);
     let end: number;
     if (r.ended_at != null) end = num(r.ended_at);
-    else end = seen !== null && nowMs - seen > GAP_MS ? Math.max(seen, start) : nowMs;
+    else end = nowMs - (seen ?? start) > GAP_MS ? Math.max(seen ?? start, start) : nowMs;
     return { id: num(r.id), start, end: Math.max(start, end) };
   });
 }
 
 /** Active session milliseconds per IST day, for time inside [fromMs, toMs). */
 function activeMsByDay(segs: Segment[], fromMs: number, toMs: number, timeZone: string): Map<string, number> {
+  // Clip to the range and merge overlaps so no instant is ever counted twice.
+  const clipped = segs
+    .map((s) => ({ start: Math.max(s.start, fromMs), end: Math.min(s.end ?? fromMs, toMs) }))
+    .filter((s) => s.end > s.start)
+    .sort((x, y) => x.start - y.start);
+  const merged: { start: number; end: number }[] = [];
+  for (const s of clipped) {
+    const last = merged[merged.length - 1];
+    if (last && s.start <= last.end) last.end = Math.max(last.end, s.end);
+    else merged.push({ ...s });
+  }
   const byDay = new Map<string, number>();
-  for (const s of segs) {
-    const a = Math.max(s.start, fromMs);
-    const b = Math.min(s.end ?? a, toMs);
-    if (b <= a) continue;
+  for (const s of merged) {
+    const a = s.start;
+    const b = s.end;
     for (let date = zonedDate(a, timeZone); ; date = addDays(date, 1)) {
       const day = dayRangeUtc(date, timeZone);
       const overlap = Math.min(b, day.end) - Math.max(a, day.start);
@@ -160,10 +166,7 @@ export function projectionSummary(
 ): ProjectionSummary {
   const segs = segments(db, nowMs);
   const open = openSegment(db);
-  const stale = open !== null && (() => {
-    const seen = lastSeen(db);
-    return seen !== null && nowMs - seen > GAP_MS;
-  })();
+  const stale = open !== null && nowMs - (lastSeen(db) ?? open.start) > GAP_MS;
   const today = zonedDate(nowMs, timeZone);
   const day = dayRangeUtc(today, timeZone);
 

@@ -203,8 +203,8 @@ Today's additional resets at IST midnight.
 
 **Sessions:**
 
-- Sessions are explicit: start and stop them from the admin dashboard at `/` (or with
-  `POST /api/projection {"action":"start"|"stop"}`).
+- Sessions are **automatic**: the first dashboard poll or worker heartbeat starts one.
+  There is no manual start or stop.
 - Active periods are stored in the `projection_segments` table, so a restart neither
   resets nor double-counts them.
 - Dashboard polls and worker heartbeats mark the system as alive. If neither arrives for
@@ -216,9 +216,10 @@ Today's additional resets at IST midnight.
 
 **Display:**
 
-- `/rajasthan` shows the projected figures, each labelled "Projected attendance".
+- `/rajasthan` shows the projected figures on mechanical rolling counters, each
+  labelled "Projected attendance", under the "Rajasthan AI Visitor Counter" plaque.
 - `/` shows actual and projected figures side by side, the additional projected
-  visitors, and the session status with a Start/Stop button.
+  visitors, and the automatic session status.
 - Both dashboards refresh their figures every 30 seconds. Camera event ingestion is
   still immediate.
 

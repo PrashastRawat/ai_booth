@@ -105,56 +105,6 @@ function formatDuration(seconds: number): string {
   return h > 0 ? `${h} h ${m} min` : `${m} min`;
 }
 
-/** Start / stop the projection session (POST /api/projection), with a confirmation. */
-function ProjectionControl({ active, onChanged }: { active: boolean | undefined; onChanged: () => void }) {
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  async function send(action: "start" | "stop") {
-    const question =
-      action === "start"
-        ? "Start the projection session? Projected attendance will grow by 1,000 per active hour on top of actual counts."
-        : "Stop the projection session? Projected visitors added so far are kept; no more are added.";
-    if (!window.confirm(question)) return;
-    setBusy(true);
-    setError(null);
-    try {
-      const res = await fetch("/api/projection", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action }),
-      });
-      if (!res.ok) {
-        const body = await res.json().catch(() => null);
-        setError(body?.error ?? `HTTP ${res.status}`);
-      }
-    } catch {
-      setError("Cannot reach the API.");
-    } finally {
-      setBusy(false);
-      onChanged();
-    }
-  }
-
-  return (
-    <div className="flex flex-col items-start gap-1">
-      <button
-        type="button"
-        disabled={busy || active === undefined}
-        onClick={() => send(active ? "stop" : "start")}
-        className={`rounded-lg px-3 py-1.5 text-sm font-medium ring-1 disabled:opacity-50 ${
-          active
-            ? "text-rose-700 ring-rose-300 hover:bg-rose-50 dark:text-rose-300 dark:ring-rose-800 dark:hover:bg-rose-950"
-            : "text-emerald-700 ring-emerald-300 hover:bg-emerald-50 dark:text-emerald-300 dark:ring-emerald-800 dark:hover:bg-emerald-950"
-        }`}
-      >
-        {busy ? "Working…" : active ? "Stop projection" : "Start projection"}
-      </button>
-      {error && <p className="text-xs text-rose-700 dark:text-rose-300">{error}</p>}
-    </div>
-  );
-}
-
 function CameraPanel({ name, cam, haveStats, now }: { name: string; cam: CameraStats | undefined; haveStats: boolean; now: number }) {
   // When the <img> stream errors we hide it for a while; `now` (the API's server
   // time) advances on every poll, so the stream is retried after PREVIEW_RETRY_MS.
@@ -199,8 +149,6 @@ function CameraPanel({ name, cam, haveStats, now }: { name: string; cam: CameraS
 export default function Dashboard() {
   const [stats, setStats] = useState<Stats | null>(null);
   const [error, setError] = useState<string | null>(null);
-  // Bumped after a projection start/stop to refresh immediately instead of in up to 30 s.
-  const [pollKey, setPollKey] = useState(0);
 
   useEffect(() => {
     let cancelled = false;
@@ -235,7 +183,7 @@ export default function Dashboard() {
       clearInterval(timer);
       controller?.abort();
     };
-  }, [pollKey]);
+  }, []);
 
   const cameraNames = [...new Set([...EXPECTED_CAMERAS, ...(stats?.cameras.map((c) => c.name) ?? [])])].sort();
   const byName = (name: string) => stats?.cameras.find((c) => c.name === name);
@@ -329,7 +277,7 @@ export default function Dashboard() {
               <p className="text-sm font-medium text-zinc-500 dark:text-zinc-400">Projection session</p>
               <div className="mt-2 flex items-center gap-2">
                 {projection ? (
-                  <StatusPill label={projection.active ? "Active" : "Stopped"} tone={projection.active ? "good" : "warn"} />
+                  <StatusPill label={projection.active ? "Active · automatic" : "Paused · automatic"} tone={projection.active ? "good" : "warn"} />
                 ) : (
                   <span className="text-2xl font-semibold">—</span>
                 )}
@@ -339,9 +287,10 @@ export default function Dashboard() {
                   ? `${projection.active && projection.activeSince ? `Running since ${formatTime(projection.activeSince, stats?.timezone)} · ` : ""}${formatDuration(projection.activeTodaySeconds)} active today`
                   : "Status unavailable"}
               </p>
-              <div className="mt-3">
-                <ProjectionControl active={projection?.active} onChanged={() => setPollKey((k) => k + 1)} />
-              </div>
+              <p className="mt-3 text-xs text-zinc-500 dark:text-zinc-400">
+                Starts by itself while a dashboard is open or the worker is running, and pauses when neither has been seen
+                for 2 minutes. No manual start is needed.
+              </p>
             </div>
           </div>
         </section>
