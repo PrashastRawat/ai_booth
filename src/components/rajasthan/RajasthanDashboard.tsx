@@ -88,8 +88,8 @@ export default function RajasthanDashboard({ fontClassName }: { fontClassName?: 
         <div className="rj-heading-space" aria-hidden="true" />
         <div className="rj-counters">
           {/* Synthetic projection is never shown without saying so. */}
-          <VisitorCounterCard id="today" label="Today’s Visitors" value={stats?.today ?? null} minDigits={4} caption={stats?.projected ? "Projected attendance" : undefined} />
-          <VisitorCounterCard id="total" label="Total Visitors" value={stats?.total ?? null} minDigits={5} caption={stats?.projected ? "Projected attendance" : undefined} />
+          <VisitorCounterCard id="today" label="Today’s Visitors" value={stats?.today ?? null} minDigits={6} caption={stats?.projected ? "Projected attendance" : undefined} />
+          <VisitorCounterCard id="total" label="Total Visitors" value={stats?.total ?? null} minDigits={6} caption={stats?.projected ? "Projected attendance" : undefined} />
         </div>
         {CAMERAS.map((name) => (
           <CameraPanel

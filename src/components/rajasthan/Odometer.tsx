@@ -58,7 +58,7 @@ type Props = {
   minDigits?: number;
 };
 
-export default function Odometer({ value, minDigits = 4 }: Props) {
+export default function Odometer({ value, minDigits = 6 }: Props) {
   // A drop in value (the IST midnight reset) bumps the epoch, remounting the wheels at
   // the new value with no reverse animation. This is React's documented
   // "adjust state while rendering" pattern for reacting to a prop change.

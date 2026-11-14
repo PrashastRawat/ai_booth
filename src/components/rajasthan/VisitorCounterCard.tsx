@@ -37,7 +37,7 @@ type Props = {
   minDigits?: number;
 };
 
-export default function VisitorCounterCard({ id, label, value, caption, minDigits = 4 }: Props) {
+export default function VisitorCounterCard({ id, label, value, caption, minDigits = 6 }: Props) {
   const exact = value === null ? undefined : exactFormatter.format(value);
   const fillId = `rj-card-fill-${id}`;
   const clipId = `rj-card-clip-${id}`;
