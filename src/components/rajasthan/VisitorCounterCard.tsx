@@ -35,8 +35,8 @@ const ADVANCE_EM: Record<string, number> = {
 // The glyphs' outer side bearings (about 0.45 em in total) are blank space.
 const OUTER_BEARINGS_EM = 0.45;
 // Ink width available inside the card at full size: 461 of the card's 521 units, with the
-// number set at 122 units/em (.rj-value font-size in RajasthanDashboard.css).
-const MAX_INK_EM = 461 / 122;
+// number set at 185 card units/em (.rj-value font-size in RajasthanDashboard.css).
+const MAX_INK_EM = 461 / 185;
 
 /** Shrinks the number only when its ink would be wider than the card (e.g. 1,25,000). */
 function fitScale(text: string): number {
@@ -86,7 +86,6 @@ export default function VisitorCounterCard({ id, label, value }: Props) {
       <p className="rj-value" style={{ "--fit": fitScale(text) } as CSSProperties} title={exact}>
         {value === null ? text : <data value={value}>{text}</data>}
       </p>
-      <Image className="rj-pavilion" src="/rajasthan/pavilion.svg" alt="" aria-hidden width={390} height={112} loading="eager" />
     </section>
   );
 }
