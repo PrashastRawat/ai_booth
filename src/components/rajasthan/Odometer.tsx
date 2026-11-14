@@ -77,11 +77,11 @@ export default function Odometer({ value, minDigits = 4 }: Props) {
   return (
     <span className="rj-odo" role="img" aria-label={value.toLocaleString("en-IN")} style={{ "--odo-n": digits.length } as CSSProperties}>
       <span className="rj-odo-wheels" aria-hidden="true">
-      {digits.map((d, i) => (
-        // Keyed by place value (from the right) so a new leading wheel mounts in place
-        // while the existing wheels keep their state and roll naturally.
-        <DigitWheel key={`${epoch}:${digits.length - i}`} digit={d} />
-      ))}
+        {digits.map((d, i) => (
+          // Keyed by place value (from the right) so a new leading wheel mounts in place
+          // while the existing wheels keep their state and roll naturally.
+          <DigitWheel key={`${epoch}:${digits.length - i}`} digit={d} />
+        ))}
       </span>
     </span>
   );

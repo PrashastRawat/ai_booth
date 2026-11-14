@@ -4,6 +4,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
+import { Worker } from "node:worker_threads";
 import { initSchema } from "./db.ts";
 import { parseEventScope } from "./time.ts";
 import { visitorSummary } from "./visitors.ts";
@@ -56,6 +57,93 @@ test("auto-start: the first poll opens the session, no manual start needed", () 
   touchProjection(db, T0 + 30_000);
   const n = (db.prepare("SELECT COUNT(*) AS n FROM projection_segments").get() as { n: number | bigint }).n;
   assert.equal(Number(n), 1);
+});
+
+test("auto-start is atomic: a failed state write leaves no orphan session", () => {
+  const db = memoryDb();
+  db.exec(`CREATE TRIGGER reject_projection_state BEFORE INSERT ON projection_state
+    BEGIN SELECT RAISE(ABORT, 'simulated write failure'); END`);
+  assert.throws(() => touchProjection(db, T0), /simulated write failure/);
+  assert.equal(db.prepare("SELECT COUNT(*) AS n FROM projection_segments").get()?.n, 0);
+  assert.equal(projectionSummary(db, T0, OPEN).active, false);
+  db.exec("DROP TRIGGER reject_projection_state");
+  touchProjection(db, T0);
+  assert.equal(projectionSummary(db, T0, OPEN).active, true);
+  db.close();
+});
+
+test("older overlapping requests cannot move the heartbeat backwards", () => {
+  const db = memoryDb();
+  runAlive(db, T0, T0 + 10 * MIN);
+  touchProjection(db, T0 + 9 * MIN);
+  assert.equal(db.prepare("SELECT last_seen_at FROM projection_state").get()?.last_seen_at, T0 + 10 * MIN);
+  assert.equal(additionalToday(db, T0 + H), 166);
+  db.close();
+});
+
+test("a legacy session without a heartbeat cannot accumulate downtime", () => {
+  const db = memoryDb();
+  db.prepare("INSERT INTO projection_segments (started_at) VALUES (?)").run(T0);
+  const stale = projectionSummary(db, T0 + H, OPEN);
+  assert.deepEqual([stale.active, stale.additionalToday], [false, 0]);
+  touchProjection(db, T0 + H);
+  const resumed = projectionSummary(db, T0 + H, OPEN);
+  assert.deepEqual([resumed.active, resumed.activeSince, resumed.additionalToday], [true, T0 + H, 0]);
+  db.close();
+});
+
+/** Separate SQLite connections really race here; a shared barrier releases them together. */
+async function concurrentTouches(file: string, nowMs: number): Promise<void> {
+  const gate = new Int32Array(new SharedArrayBuffer(4));
+  const workers = Array.from({ length: 8 }, () => new Worker(`
+    const { parentPort, workerData } = require('node:worker_threads');
+    const { DatabaseSync } = require('node:sqlite');
+    (async () => {
+      const { touchProjection } = await import(workerData.moduleUrl);
+      const db = new DatabaseSync(workerData.file);
+      try {
+        db.exec('PRAGMA busy_timeout = 5000');
+        parentPort.postMessage('ready');
+        Atomics.wait(new Int32Array(workerData.gate), 0, 0);
+        touchProjection(db, workerData.nowMs);
+      } finally { db.close(); }
+    })().catch(err => { throw err; });
+  `, { eval: true, workerData: { file, nowMs, gate: gate.buffer, moduleUrl: new URL("./projection.ts", import.meta.url).href } }));
+  try {
+    const completed = workers.map(worker => new Promise<void>((resolve, reject) => {
+      worker.once("error", reject);
+      worker.once("exit", code => code === 0 ? resolve() : reject(new Error(`Projection worker exited ${code}`)));
+    }));
+    await Promise.all(workers.map(worker => new Promise<void>((resolve, reject) => {
+      worker.once("message", () => resolve());
+      worker.once("error", reject);
+    })));
+    Atomics.store(gate, 0, 1);
+    Atomics.notify(gate, 0);
+    await Promise.all(completed);
+  } finally {
+    await Promise.all(workers.map(worker => worker.terminate()));
+  }
+}
+
+test("simultaneous processes start and resume only one session", { timeout: 20_000 }, async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "projection-concurrency-"));
+  const file = path.join(dir, "entries.db");
+  const db = new DatabaseSync(file);
+  try {
+    initSchema(db);
+    await concurrentTouches(file, T0);
+    assert.equal(db.prepare("SELECT COUNT(*) AS n FROM projection_segments").get()?.n, 1);
+    runAlive(db, T0, T0 + 30 * MIN);
+    await concurrentTouches(file, T0 + 2 * H);
+    assert.equal(db.prepare("SELECT COUNT(*) AS n FROM projection_segments").get()?.n, 2);
+    assert.equal(db.prepare("SELECT COUNT(*) AS n FROM projection_segments WHERE ended_at IS NULL").get()?.n, 1);
+    assert.equal(additionalToday(db, T0 + 2 * H), 500);
+    assert.equal(db.prepare("SELECT COUNT(*) AS n FROM entries").get()?.n, 0);
+  } finally {
+    db.close();
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
 });
 
 test("increases gradually, 1,000 after one active hour and 2,000 after two", () => {

@@ -212,7 +212,9 @@ Today's additional resets at IST midnight.
   when the system is back.
 - An active session therefore only accrues while the Next.js app is running **and** a
   dashboard is open or the worker is running.
-- `GET /api/projection` lists the stored segments for auditing.
+- `GET /api/projection` lists the stored segments for auditing; reading it does not
+  start or keep a session alive. Session writes use a SQLite write transaction so
+  simultaneous dashboard polls and worker heartbeats cannot create duplicate sessions.
 
 **Display:**
 

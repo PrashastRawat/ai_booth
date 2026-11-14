@@ -176,7 +176,10 @@
 /* Between the header (124 units) and the border (42 units). Row 1: the heritage
    heading plaque. Row 2: the two counter cards. Row 3: the two camera panels, each
    centred under its card and sized to its 16:9 video; this row shrinks (never below
-   zero) when the viewport is wider than the 16:9 design, so the page never overflows. */
+   zero) when the viewport is wider than the 16:9 design, so the page never overflows.
+   The narrow plaque occupies the empty space BETWEEN the upper arches. Bottom-aligning
+   the original 418-unit cards in their 380-unit row shares that empty space without
+   shrinking the cards or the original 308-unit camera row. */
 .rj-main {
   position: absolute;
   z-index: 4;
@@ -290,6 +293,8 @@
 /* Gold bezel around the digit compartments. */
 .rj-odo {
   --odo-h: calc(96 * var(--cu));
+  /* The card has 461 units available. Reserve 24 for the bezel and account for
+     every inter-wheel gap before dividing; scale glyphs with the resulting cell. */
   --odo-d: min(calc(72 * var(--cu)), calc((437 * var(--cu) - (var(--odo-n, 4) - 1) * 6 * var(--cu)) / var(--odo-n, 4)));
   display: block;
   flex: none;
