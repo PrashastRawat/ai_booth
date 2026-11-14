@@ -4,7 +4,6 @@ import { useEffect, useState } from "react";
 import CameraPanel from "./CameraPanel";
 import RajasthanDecorations from "./RajasthanDecorations";
 import RajasthanHeader from "./RajasthanHeader";
-import RajasthanHeading from "./RajasthanHeading";
 import VisitorCounterCard from "./VisitorCounterCard";
 import "./RajasthanDashboard.css";
 
@@ -84,9 +83,9 @@ export default function RajasthanDashboard({ fontClassName }: { fontClassName?: 
     <div className={`rj-root ${fontClassName ?? ""}`}>
       <RajasthanHeader />
       <RajasthanDecorations />
-      {/* Grid rows: heading plaque, the two counters, the two entrance cameras. */}
+      {/* The reserved first row keeps the established card and camera positions. */}
       <main className="rj-main">
-        <RajasthanHeading />
+        <div className="rj-heading-space" aria-hidden="true" />
         <div className="rj-counters">
           {/* Synthetic projection is never shown without saying so. */}
           <VisitorCounterCard id="today" label="Today’s Visitors" value={stats?.today ?? null} minDigits={4} caption={stats?.projected ? "Projected attendance" : undefined} />

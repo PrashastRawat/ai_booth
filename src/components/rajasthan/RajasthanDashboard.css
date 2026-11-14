@@ -53,19 +53,20 @@
   left: 0;
   right: 0;
   box-sizing: border-box;
-  height: calc(124 * var(--s));
+  height: calc(138 * var(--s));
   display: flex;
   align-items: center;
-  justify-content: center;
-  background: linear-gradient(180deg, #fdf6ef, #fcf3ea);
-  border-bottom: calc(3 * var(--s)) solid #cd8434;
-  box-shadow: 0 calc(2 * var(--s)) calc(12 * var(--s)) rgb(176 108 62 / 0.3);
+  justify-content: flex-start;
+  background: linear-gradient(180deg, #fff1e4, #fff6ed 70%, #fff2e2);
+  border-bottom: calc(2.5 * var(--s)) solid #df962d;
+  box-shadow: 0 calc(2 * var(--s)) calc(4 * var(--s)) rgb(176 108 62 / 0.18);
 }
 
 .rj-logos {
   display: flex;
   align-items: center;
-  gap: calc(44 * var(--s));
+  gap: calc(20 * var(--s));
+  margin-left: calc(30 * var(--s));
 }
 
 /* The logo files are JPEGs on white (#fff and #f6f6f6); a slight brightness lift turns
@@ -77,7 +78,7 @@
 }
 
 .rj-logo-iitf {
-  height: calc(86 * var(--s));
+  height: calc(66 * var(--s));
 }
 
 .rj-logo-rajasthan {
@@ -86,8 +87,8 @@
 }
 
 .rj-logo-divider {
-  width: calc(2 * var(--s));
-  height: calc(86 * var(--s));
+  width: calc(1.5 * var(--s));
+  height: calc(72 * var(--s));
   background: linear-gradient(180deg, rgb(168 122 69 / 0.15), #9e7040 18%, #996c3b 50%, #9e7040 82%, rgb(168 122 69 / 0.15));
 }
 
@@ -173,13 +174,12 @@
 
 /* ------------------------------------------------------------ main grid */
 
-/* Between the header (124 units) and the border (42 units). Row 1: the heritage
-   heading plaque. Row 2: the two counter cards. Row 3: the two camera panels, each
+/* Preserve the established content grid: row 1 reserves the original heading space;
+   row 2 contains the two counter cards; row 3 contains the two camera panels, each
    centred under its card and sized to its 16:9 video; this row shrinks (never below
    zero) when the viewport is wider than the 16:9 design, so the page never overflows.
-   The narrow plaque occupies the empty space BETWEEN the upper arches. Bottom-aligning
-   the original 418-unit cards in their 380-unit row shares that empty space without
-   shrinking the cards or the original 308-unit camera row. */
+   The inset card crowns meet the header plaque without covering the visitor icons;
+   neither the header nor the crowns change card or camera dimensions. */
 .rj-main {
   position: absolute;
   z-index: 4;
@@ -228,19 +228,10 @@
   overflow: visible;
 }
 
-.rj-ornament {
-  position: absolute;
-  left: 50%;
-  top: calc(11 * var(--cu));
-  width: calc(48 * var(--cu));
-  height: calc(34.3 * var(--cu));
-  transform: translateX(-50%);
-}
-
 .rj-icon {
   position: absolute;
   left: 50%;
-  top: calc(50 * var(--cu));
+  top: calc(78 * var(--cu));
   width: calc(56 * var(--cu));
   height: calc(40.4 * var(--cu));
   transform: translateX(-50%);
@@ -250,7 +241,7 @@
   position: absolute;
   left: 0;
   right: 0;
-  top: calc(98 * var(--cu));
+  top: calc(124 * var(--cu));
   margin: 0;
   font-family: var(--font-rj-label), Georgia, "Times New Roman", serif;
   font-size: calc(42 * var(--cu));
@@ -265,7 +256,7 @@
 .rj-rule {
   position: absolute;
   left: 50%;
-  top: calc(152 * var(--cu));
+  top: calc(176 * var(--cu));
   width: calc(280 * var(--cu));
   height: calc(13.4 * var(--cu));
   transform: translateX(-50%);
@@ -387,20 +378,27 @@
 
 /* ------------------------------------------------------- heritage heading plaque */
 
-.rj-heading {
+.rj-heading-space {
   grid-column: 1 / -1;
-  position: relative;
-  display: flex;
-  align-items: flex-end;
-  justify-content: center;
+}
+
+.rj-heading {
+  position: absolute;
+  left: 50%;
+  top: 0;
+  width: calc(820 * var(--s));
+  height: calc(220 * var(--s));
+  transform: translateX(-50%);
+  pointer-events: none;
 }
 
 .rj-plaque {
-  position: relative;
-  width: calc(400 * var(--s));
-  max-width: 100%;
-  height: calc(44 * var(--s));
-  filter: drop-shadow(0 calc(4 * var(--s)) calc(8 * var(--s)) rgb(122 40 20 / 0.35));
+  position: absolute;
+  left: calc(80 * var(--s));
+  top: calc(56 * var(--s));
+  width: calc(660 * var(--s));
+  height: calc(160 * var(--s));
+  filter: drop-shadow(0 calc(3 * var(--s)) calc(4 * var(--s)) rgb(122 40 20 / 0.28));
 }
 
 .rj-plaque-bg {
@@ -413,63 +411,75 @@
 .rj-plaque-skyline {
   position: absolute;
   left: 50%;
-  top: calc(-10 * var(--s));
-  width: calc(210 * var(--s));
-  height: calc(17 * var(--s));
+  top: calc(-39 * var(--s));
+  width: calc(440 * var(--s));
+  height: calc(64 * var(--s));
   transform: translateX(-50%);
 }
 
 .rj-plaque-text {
   position: absolute;
-  inset: 0;
+  inset: calc(4 * var(--s)) 0 calc(31 * var(--s));
   margin: 0;
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: calc(2 * var(--s));
-  padding-top: calc(4 * var(--s));
+  gap: calc(8 * var(--s));
+  font-style: italic;
   line-height: 1;
   text-align: center;
 }
 
 .rj-plaque-line1 {
-  font-family: var(--font-rj-label), Georgia, "Times New Roman", serif;
-  font-size: calc(12 * var(--s));
-  font-weight: 700;
-  letter-spacing: 0.22em;
-  text-transform: uppercase;
-  color: #f3c35c;
+  font-family: var(--font-rj-serif), Georgia, "Times New Roman", serif;
+  font-size: calc(46 * var(--s));
+  font-weight: 500;
+  color: #ffedbb;
+  transform: translateY(calc(3 * var(--s)));
   display: flex;
   align-items: center;
-  gap: calc(12 * var(--s));
+  gap: calc(18 * var(--s));
 }
 
 .rj-plaque-line1::before,
 .rj-plaque-line1::after {
   content: "";
-  width: calc(7 * var(--s));
-  height: calc(7 * var(--s));
-  background: #e3a347;
-  transform: rotate(45deg);
+  width: calc(82 * var(--s));
+  height: calc(8 * var(--s));
+  background: linear-gradient(90deg, #c98221, #f9c65d);
+  clip-path: polygon(0 43%, 91% 43%, 95% 0, 100% 50%, 95% 100%, 91% 57%, 0 57%);
+}
+
+.rj-plaque-line1::after {
+  transform: rotate(180deg);
 }
 
 .rj-plaque-line2 {
   font-family: var(--font-rj-serif), Georgia, "Times New Roman", serif;
-  font-size: calc(24 * var(--s));
-  font-weight: 800;
-  color: #fdf1d8;
+  font-size: calc(64 * var(--s));
+  font-weight: 500;
+  white-space: nowrap;
+  color: #ffedbb;
   text-shadow: 0 calc(2 * var(--s)) calc(3 * var(--s)) rgb(70 10 10 / 0.5);
 }
 
 .rj-heading-camel {
-  width: calc(29 * var(--s));
-  height: calc(26 * var(--s));
-  margin: 0 calc(12 * var(--s)) calc(22 * var(--s));
+  position: absolute;
+  top: calc(80 * var(--s));
+  width: calc(84 * var(--s));
+  height: calc(58 * var(--s));
+  object-fit: fill;
+}
+
+.rj-heading-camel-left {
+  left: calc(20 * var(--s));
+  transform: scaleX(1.25);
 }
 
 .rj-heading-camel-right {
-  transform: scaleX(-1);
+  right: calc(20 * var(--s));
+  transform: scaleX(-1.25);
 }
 
 /* ---------------------------------------------------------------- cameras */
@@ -586,6 +596,28 @@
     grid-template-rows: none;
     row-gap: calc(28 * var(--s));
     padding: 0;
+  }
+
+  .rj-header {
+    height: calc(178 * var(--s));
+  }
+
+  .rj-logos {
+    position: absolute;
+    top: calc(10 * var(--s));
+    margin-left: calc(12 * var(--s));
+    transform: scale(0.75);
+    transform-origin: left top;
+  }
+
+  .rj-heading {
+    top: calc(102 * var(--s));
+    transform: translateX(-50%) scale(0.7);
+    transform-origin: center top;
+  }
+
+  .rj-heading-space {
+    height: calc(54 * var(--s));
   }
 
   .rj-counters {

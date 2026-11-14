@@ -1,4 +1,5 @@
 import Image from "next/image";
+import RajasthanHeading from "./RajasthanHeading";
 
 // Official logos as supplied in public/logos (both are JPEGs with white backgrounds;
 // the CSS blends the white into the header colour).
@@ -13,6 +14,7 @@ export default function RajasthanHeader() {
         <span className="rj-logo-divider" aria-hidden />
         <Image className="rj-logo-rajasthan" alt="Government of Rajasthan" loading="eager" {...RAJASTHAN_LOGO} />
       </div>
+      <RajasthanHeading />
     </header>
   );
 }

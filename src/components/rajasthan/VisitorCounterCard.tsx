@@ -6,15 +6,17 @@ const exactFormatter = new Intl.NumberFormat("en-IN");
 
 // Card size in layout units; must match .rj-card in RajasthanDashboard.css.
 const CARD_H = 380;
-// The arch top is drawn at 0.74 of its full height so the compact card keeps its silhouette.
-const ARCH_TOP_SCALE = 0.74;
+// Inset the crown below the large title plaque, keeping the existing card body
+// and camera row fixed. The shorter shoulders leave room for the visitor label.
+const ARCH_TOP_INSET = 45;
+const ARCH_TOP_SCALE = 0.6;
 
 /**
  * Cusped Rajasthani arch outline in card units (521 wide): ogee apex, two lobes per
  * shoulder, straight sides and rounded bottom corners.
  */
 function archPath(h: number): string {
-  const y = (v: number) => Math.round((1.5 + (v - 1.5) * ARCH_TOP_SCALE) * 10) / 10;
+  const y = (v: number) => Math.round((ARCH_TOP_INSET + 1.5 + (v - 1.5) * ARCH_TOP_SCALE) * 10) / 10;
   return (
     `M260.5 ${y(1.5)}C247 ${y(23)} 225 ${y(32)} 195 ${y(38)} 153 ${y(45)} 128 ${y(59)} 125 ${y(85)} ` +
     `84 ${y(85)} 50 ${y(108)} 50 ${y(137)} 30 ${y(137)} 1.5 ${y(167)} 1.5 ${y(192)}` +
@@ -63,7 +65,6 @@ export default function VisitorCounterCard({ id, label, value, caption, minDigit
         <path d={ARCH_PATH} fill="none" stroke="#9f1016" strokeWidth="3.2" />
       </svg>
 
-      <Image className="rj-ornament" src="/rajasthan/lotus-ornament.svg" alt="" aria-hidden width={56} height={40} loading="eager" />
       <Image className="rj-icon" src="/rajasthan/visitors-icon.svg" alt="" aria-hidden width={68} height={49} loading="eager" />
       <h2 id={`rj-label-${id}`} className="rj-label">
         {label}
