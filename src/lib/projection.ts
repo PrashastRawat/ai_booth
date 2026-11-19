@@ -1,9 +1,9 @@
 // Hourly attendance PROJECTION: a synthetic figure added on top of the actual camera
 // counts, never mixed with them.
 //
-//   additional visitors for a day = floor(activeSeconds that day x 1000 / 3600)
+//   additional visitors for a day = floor(activeSeconds that day x 2000 / 3600)
 //
-// i.e. 1,000 per hour of active projection session, accruing smoothly (about 16.7 per
+// i.e. 2,000 per hour of active projection session, accruing smoothly (about 33.3 per
 // minute) rather than in hourly jumps. Nothing is written to the `entries` table.
 //
 // Sessions are AUTOMATIC: the first dashboard poll or worker heartbeat opens one, and
@@ -15,7 +15,7 @@
 import type { DatabaseSync } from "node:sqlite";
 import { EVENT_TIMEZONE, addDays, dayRangeUtc, zonedDate, type EventScope } from "./time.ts";
 
-export const PER_HOUR = 1000;
+export const PER_HOUR = 2000;
 /** Longer than this without any poll or heartbeat counts as "system stopped". */
 export const GAP_MS = 2 * 60 * 1000;
 /** last_seen_at is written at most this often (reads still use the real gap). */

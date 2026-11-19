@@ -189,11 +189,11 @@ visitors**.
 
 **Formula:** while a projection session is active, each IST day gets
 
-`additional = floor(active seconds that day × 1,000 / 3,600)`
+`additional = floor(active seconds that day × 2,000 / 3,600)`
 
-That is 1,000 per active hour, added gradually (about 16–17 a minute) rather than in
-hourly jumps. For example: 1 min → 16, 10 min → 166, 30 min → 500, 60 min → 1,000,
-120 min → 2,000.
+That is 2,000 per active hour, added gradually (about 33 a minute) rather than in
+hourly jumps. For example: 1 min → 33, 10 min → 333, 30 min → 1,000, 60 min → 2,000,
+120 min → 4,000.
 
 - `projectedTodayVisitors` = `todayVisitors` + today's additional.
 - `projectedTotalVisitors` = `totalVisitors` + the sum of each day's additional over

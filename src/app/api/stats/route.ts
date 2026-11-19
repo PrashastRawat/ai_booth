@@ -1,7 +1,7 @@
 import { NextResponse, connection } from "next/server";
 import { getDb } from "@/lib/db";
 import { eventScopeFromEnv, visitorSummary } from "@/lib/visitors";
-import { projectionSummary, touchProjection } from "@/lib/projection";
+import { PER_HOUR, projectionSummary, touchProjection } from "@/lib/projection";
 
 const WORKER_TIMEOUT_MS = 5000;
 
@@ -84,7 +84,7 @@ export async function GET() {
       activeTodaySeconds: Math.floor(projection.activeTodayMs / 1000),
       additionalToday: projection.additionalToday,
       additionalTotal: projection.additionalTotal,
-      perHour: 1000,
+      perHour: PER_HOUR,
     },
     timezone: summary.timezone,
     date: summary.date,
