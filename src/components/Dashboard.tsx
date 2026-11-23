@@ -256,7 +256,8 @@ export default function Dashboard() {
           <h2 id="projection-heading" className="text-sm font-semibold uppercase tracking-wide text-amber-800 dark:text-amber-300">
             Projected attendance{" "}
             <span className="font-normal normal-case tracking-normal text-zinc-500">
-              · actual counts + 1,000 synthetic visitors per active session hour; not camera-detected
+              · actual counts + 6,500 synthetic visitors per active session hour (earlier sessions keep their
+              original rate); not camera-detected
             </span>
           </h2>
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">

@@ -43,6 +43,15 @@ next-env.d.ts
 # runtime data (SQLite database)
 /data/
 
+# SQLite runtime files and backups, wherever an operator stores them.
+*.db
+*.db-*
+*.db.*
+*.sqlite*
+*.bak
+*.backup
+/backups/
+
 # python worker
 worker/.venv/
 worker/__pycache__/

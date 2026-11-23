@@ -1,6 +1,8 @@
 "use client";
 
 import { useEffect, useRef, useState, type CSSProperties } from "react";
+import { ANIMATION } from "@/lib/counterAnimation";
+import { odometerDigits, rollWheel } from "@/lib/odometerWheel";
 
 // Mechanical odometer display. Purely visual: it renders exactly the number it is
 // given and never changes any stored count.
@@ -24,21 +26,21 @@ function DigitWheel({ digit }: { digit: number }) {
 
   useEffect(() => {
     const el = stripRef.current;
-    const cur = posRef.current;
-    if (!el || digit === cur % 10) return;
-    const delta = (digit - (cur % 10) + 10) % 10; // always roll upward
-    let from = cur;
-    if (cur + delta > STRIP.length - 1) {
+    const move = rollWheel(posRef.current, digit); // always rolls upward
+    if (!el || !move) return;
+    if (move.snapFrom !== null) {
       // Snap to the equivalent lower position without a transition; the forced reflow
       // commits it so the subsequent change still animates (FLIP technique).
-      from = cur - 10;
       el.style.transition = "none";
-      el.style.transform = shift(from);
+      el.style.transform = shift(move.snapFrom);
       void el.offsetHeight;
     }
-    posRef.current = from + delta;
+    posRef.current = move.to;
     el.style.transition = ""; // back to the stylesheet transition
-    el.style.transform = shift(from + delta);
+    // Finish before even the fastest +1 tick, so a carry never rebases a wheel
+    // mid-roll. Keep the existing mechanical easing and appearance.
+    el.style.transitionDuration = `${ANIMATION.minStepMs * 0.8}ms`;
+    el.style.transform = shift(move.to);
   }, [digit]);
 
   return (
@@ -69,10 +71,7 @@ export default function Odometer({ value, minDigits = 6 }: Props) {
     if (value < prev) setEpoch(epoch + 1);
   }
 
-  const digits = String(Math.max(0, Math.trunc(value)))
-    .padStart(minDigits, "0")
-    .split("")
-    .map(Number);
+  const digits = odometerDigits(value, minDigits);
 
   return (
     <span className="rj-odo" role="img" aria-label={value.toLocaleString("en-IN")} style={{ "--odo-n": digits.length } as CSSProperties}>

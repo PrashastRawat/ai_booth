@@ -1,5 +1,9 @@
 # Entrance counter
 
+For an **existing exhibition installation**, follow [DEPLOYMENT.md](DEPLOYMENT.md)
+before pulling updates. It preserves the PC's database, records a read-only baseline,
+tests the candidate migration on a backup copy, and blocks unverified historical rates.
+
 Counts people entering an event through one or two USB webcams (one per
 entrance). A Python worker detects people (YOLO11 nano, person class only),
 tracks them (ByteTrack) and counts each tracked person once when the
@@ -187,13 +191,43 @@ visitors**.
 - They remain the source of truth.
 - Nothing synthetic is ever written to the `entries` table.
 
-**Formula:** while a projection session is active, each IST day gets
+**Rate:** new activity accrues at **6,500 per active hour** (6,500 / 3,600 per active
+second, about 108 a minute), added gradually rather than in hourly jumps. For example:
+1 min → 108, 30 min → 3,250, 1 h → 6,500, 5 h → 32,500, 9 h → 58,500. There is no
+nine-hour timer or cap; projection continues for as long as the session is active.
 
-`additional = floor(active seconds that day × 2,000 / 3,600)`
+**Rates are versioned, forward only.** Each stored segment records the rate it was
+recorded at (`rate_visitors` per `rate_seconds`). Changing the rate in
+`src/lib/projection.ts` (`CURRENT_RATE`) affects only activity after the change; past
+segments keep their own rate, including any recorded at 5,500 per nine active hours or
+5,500 per active hour.
+Segments stored before versioning existed have no rate and are **assumed to have used
+2,000 per hour** (`LEGACY_RATE`). Historical totals are preserved only if that assumption
+matches the installed build. A live session is split at the first dashboard poll or worker
+heartbeat handled by the new build. The rate columns are added automatically on startup;
+existing rows retain their original timestamps and NULL rates until an open session closes.
 
-That is 2,000 per active hour, added gradually (about 33 a minute) rather than in
-hourly jumps. For example: 1 min → 33, 10 min → 333, 30 min → 1,000, 60 min → 2,000,
-120 min → 4,000.
+**Before copying this update to the exhibition PC:** verify the rate in its currently
+installed build and whether its database already has rate columns. This checkout's previous
+commit uses 2,000/hour, but that does not verify the PC. If unversioned activity used a
+different rate, resolve the migration before starting this build. Stop the existing app,
+take a consistent SQLite backup (including any uncheckpointed WAL data), and test the
+migration on a scratch copy to compare historical totals and camera events. Preserve the
+PC's `data/` directory; never replace it with development data. Avoid running old and new
+builds against the same database, as an older build does not understand rate history.
+
+**Formula:** for each IST day,
+
+`additional = floor( Σ over rates: whole active seconds at that rate × visitors / seconds )`
+
+computed with exact integer fractions and rounded down once per day.
+
+**Public counters (`/rajasthan`):** the odometers move toward each `/api/stats` snapshot
+in consecutive +1 steps, paced to finish before the next poll, with small timing
+variations. This is a display effect only. The API figures stay authoritative, nothing
+above the latest snapshot is ever shown, and the steps are not individual detected
+arrivals. A first load, a midnight reset or a backlog too large to animate within one
+poll (after an outage or restart, or with a hidden tab) is shown directly.
 
 - `projectedTodayVisitors` = `todayVisitors` + today's additional.
 - `projectedTotalVisitors` = `totalVisitors` + the sum of each day's additional over
@@ -239,14 +273,14 @@ Today's additional resets at IST midnight.
 5. Walk through a few times and check that *Total people entered* goes up once
    per person, and not when someone stands on the line or walks back out.
 
-## Resetting counts
+## Preserving counts
 
 Today's Visitors resets at midnight IST on its own. To leave out setup-day
 test entries, set `EVENT_START_DATE` (see above) rather than deleting data.
 
-To wipe everything: stop the Next.js app and delete the `data/` folder. It is
-recreated empty on the next start. **This permanently deletes all recorded
-entries.**
+Keep the exhibition PC's `data/` directory in place across every update. Never delete
+it or replace it with development data. Use the backup, copy verification and rollback
+procedure in [DEPLOYMENT.md](DEPLOYMENT.md) for an existing installation.
 
 ## Tests
 

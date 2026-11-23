@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { CounterAnimator, type Counts } from "@/lib/counterAnimation";
 import CameraPanel from "./CameraPanel";
 import RajasthanDecorations from "./RajasthanDecorations";
 import RajasthanHeader from "./RajasthanHeader";
@@ -76,8 +77,45 @@ function useDashboardStats(): Stats | null {
   return stats;
 }
 
+/**
+ * The numbers the odometers show while they travel, in +1 steps, to the latest
+ * /api/stats snapshot (see src/lib/counterAnimation.ts). Display only: the snapshot
+ * stays authoritative and nothing above it is ever shown.
+ */
+function useAnimatedCounts(today: number | null, total: number | null): Counts | null {
+  const [display, setDisplay] = useState<Counts | null>(null);
+  const animator = useRef<CounterAnimator | null>(null);
+
+  useEffect(() => {
+    const anim = new CounterAnimator(
+      setDisplay,
+      {
+        set: (fn, ms) => window.setTimeout(fn, ms),
+        clear: (handle) => window.clearTimeout(handle as number),
+        now: () => performance.now(),
+      },
+      () => document.hidden,
+    );
+    animator.current = anim;
+    const onVisibility = () => anim.visibilityChanged();
+    document.addEventListener("visibilitychange", onVisibility);
+    return () => {
+      document.removeEventListener("visibilitychange", onVisibility);
+      anim.dispose();
+      animator.current = null;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (today !== null && total !== null) animator.current?.setTarget({ today, total });
+  }, [today, total]);
+
+  return display;
+}
+
 export default function RajasthanDashboard({ fontClassName }: { fontClassName?: string }) {
   const stats = useDashboardStats();
+  const shown = useAnimatedCounts(stats?.today ?? null, stats?.total ?? null);
 
   return (
     <div className={`rj-root ${fontClassName ?? ""}`}>
@@ -88,8 +126,8 @@ export default function RajasthanDashboard({ fontClassName }: { fontClassName?: 
         <div className="rj-heading-space" aria-hidden="true" />
         <div className="rj-counters">
           {/* Synthetic projection is never shown without saying so. */}
-          <VisitorCounterCard id="today" label="Today’s Visitors" value={stats?.today ?? null} minDigits={6} caption={stats?.projected ? "Projected attendance" : undefined} />
-          <VisitorCounterCard id="total" label="Total Visitors" value={stats?.total ?? null} minDigits={6} caption={stats?.projected ? "Projected attendance" : undefined} />
+          <VisitorCounterCard id="today" label="Today’s Visitors" value={shown?.today ?? null} minDigits={6} caption={stats?.projected ? "Projected attendance" : undefined} />
+          <VisitorCounterCard id="total" label="Total Visitors" value={shown?.total ?? null} minDigits={6} caption={stats?.projected ? "Projected attendance" : undefined} />
         </div>
         {CAMERAS.map((name) => (
           <CameraPanel

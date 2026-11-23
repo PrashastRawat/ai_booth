@@ -1,7 +1,7 @@
 import { NextResponse, connection } from "next/server";
 import { getDb } from "@/lib/db";
 import { eventScopeFromEnv, visitorSummary } from "@/lib/visitors";
-import { PER_HOUR, projectionSummary, touchProjection } from "@/lib/projection";
+import { CURRENT_RATE, projectionSummary, touchProjection } from "@/lib/projection";
 
 const WORKER_TIMEOUT_MS = 5000;
 
@@ -84,7 +84,9 @@ export async function GET() {
       activeTodaySeconds: Math.floor(projection.activeTodayMs / 1000),
       additionalToday: projection.additionalToday,
       additionalTotal: projection.additionalTotal,
-      perHour: PER_HOUR,
+      // Rate for new activity only; earlier activity keeps the rate it was recorded at.
+      perHour: (CURRENT_RATE.visitors * 3600) / CURRENT_RATE.seconds,
+      rate: { visitors: CURRENT_RATE.visitors, activeSeconds: CURRENT_RATE.seconds },
     },
     timezone: summary.timezone,
     date: summary.date,
