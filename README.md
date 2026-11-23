@@ -191,10 +191,13 @@ visitors**.
 - They remain the source of truth.
 - Nothing synthetic is ever written to the `entries` table.
 
-**Rate:** new activity accrues at **6,500 per active hour** (6,500 / 3,600 per active
-second, about 108 a minute), added gradually rather than in hourly jumps. For example:
-1 min → 108, 30 min → 3,250, 1 h → 6,500, 5 h → 32,500, 9 h → 58,500. There is no
-nine-hour timer or cap; projection continues for as long as the session is active.
+**Rate:** new activity accrues at **2,000 per active hour before 11:00 IST** and **6,500
+per active hour from 11:00 IST** (`EARLY_RATE`, `CURRENT_RATE`, `PACE_SWITCH_HOUR` in
+`src/lib/projection.ts`), added gradually rather than in hourly jumps. Opening at 10:30
+gives 1,000 for the first 30 minutes, then 6,500 per hour; opening after 11:00 runs at
+6,500 per hour from the start. A running session is split exactly at 11:00, and at IST
+midnight it returns to the early rate. There is no nine-hour timer or cap; projection
+continues for as long as the session is active.
 
 **Rates are versioned, forward only.** Each stored segment records the rate it was
 recorded at (`rate_visitors` per `rate_seconds`). Changing the rate in
@@ -222,12 +225,14 @@ builds against the same database, as an older build does not understand rate his
 
 computed with exact integer fractions and rounded down once per day.
 
-**Public counters (`/rajasthan`):** the odometers move toward each `/api/stats` snapshot
-in consecutive +1 steps, paced to finish before the next poll, with small timing
-variations. This is a display effect only. The API figures stay authoritative, nothing
-above the latest snapshot is ever shown, and the steps are not individual detected
-arrivals. A first load, a midnight reset or a backlog too large to animate within one
-poll (after an outage or restart, or with a hidden tab) is shown directly.
+**Public counters (`/rajasthan`):** the odometers move toward each `/api/stats` snapshot,
+changing once every 3-5 seconds (random) by a varying small amount. The rhythm follows the
+real cameras (`last5Minutes` compared with its recent average): fewer detections slow the
+display down with pauses, letting it trail by at most about a minute; more detections speed
+it up to catch up. This is a display effect only. The API figures, and so the hourly
+total, stay authoritative; nothing above the latest snapshot is ever shown, and the
+changes are not individual detected arrivals. A first load, a midnight reset or a backlog
+too large to animate (after an outage or restart, or with a hidden tab) is shown directly.
 
 - `projectedTodayVisitors` = `todayVisitors` + today's additional.
 - `projectedTotalVisitors` = `totalVisitors` + the sum of each day's additional over

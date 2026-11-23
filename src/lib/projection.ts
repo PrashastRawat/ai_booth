@@ -27,8 +27,41 @@ import { EVENT_TIMEZONE, addDays, dayRangeUtc, zonedDate, type EventScope } from
 /** Synthetic visitors per active seconds. Both integers, so the arithmetic stays exact. */
 export type Rate = { visitors: number; seconds: number };
 
-/** Rate for activity recorded from now on: 6,500 per active hour. */
+/** Rate for activity recorded from now on, from PACE_SWITCH_HOUR IST: 6,500 per active hour. */
 export const CURRENT_RATE: Rate = { visitors: 6500, seconds: 3600 };
+
+/** Slower rate for activity recorded each day before PACE_SWITCH_HOUR IST: 2,000 per active hour. */
+export const EARLY_RATE: Rate = { visitors: 2000, seconds: 3600 };
+
+/** IST hour of day at which new activity switches from EARLY_RATE to CURRENT_RATE (11:00). */
+export const PACE_SWITCH_HOUR = 11;
+
+const HOUR_MS = 3_600_000;
+
+/** Rate the schedule assigns to activity at `t`: EARLY_RATE before 11:00 IST, else CURRENT_RATE. */
+export function scheduledRate(t: number): Rate {
+  return t < dayRangeUtc(zonedDate(t, EVENT_TIMEZONE), EVENT_TIMEZONE).start + PACE_SWITCH_HOUR * HOUR_MS ? EARLY_RATE : CURRENT_RATE;
+}
+
+/**
+ * Where a segment recorded under the schedule must change rate in (startMs, endMs]:
+ * at IST midnight (back to EARLY_RATE) and at 11:00 IST (to CURRENT_RATE).
+ */
+function scheduleSplits(startMs: number, rate: Rate, endMs: number): { at: number; rate: Rate }[] {
+  const splits: { at: number; rate: Rate }[] = [];
+  let running = rate;
+  for (let date = zonedDate(startMs, EVENT_TIMEZONE); ; date = addDays(date, 1)) {
+    const dayStart = dayRangeUtc(date, EVENT_TIMEZONE).start;
+    if (dayStart > endMs) break;
+    for (const [at, next] of [[dayStart, EARLY_RATE], [dayStart + PACE_SWITCH_HOUR * HOUR_MS, CURRENT_RATE]] as const) {
+      if (at > startMs && at <= endMs && !sameRate(next, running)) {
+        splits.push({ at, rate: next });
+        running = next;
+      }
+    }
+  }
+  return splits;
+}
 
 /**
  * Assumed rate of segments stored before rates were recorded (rate columns NULL).
@@ -109,7 +142,18 @@ function rateOf(visitors: unknown, seconds: unknown): Rate {
   return v >= 0 && s > 0 ? { visitors: v, seconds: s } : LEGACY_RATE;
 }
 
-type Segment = { id: number; start: number; end: number | null; rate: Rate };
+/**
+ * `scheduled`: recorded by this schedule (explicit EARLY_RATE or CURRENT_RATE), so it follows
+ * the 11:00 / midnight switches. Unversioned rows and other stored rates never do.
+ */
+type Segment = { id: number; start: number; end: number | null; rate: Rate; scheduled: boolean };
+
+function segmentOf(r: SegmentRow, end: number | null): Segment {
+  const rate = rateOf(r.rate_visitors, r.rate_seconds);
+  const versioned = r.rate_visitors != null && r.rate_seconds != null;
+  const scheduled = versioned && (sameRate(rate, EARLY_RATE) || sameRate(rate, CURRENT_RATE));
+  return { id: num(r.id), start: num(r.started_at), end, rate, scheduled };
+}
 type SegmentRow = { id: unknown; started_at: unknown; ended_at: unknown; rate_visitors: unknown; rate_seconds: unknown };
 const SEGMENT_COLUMNS = "id, started_at, ended_at, rate_visitors, rate_seconds";
 
@@ -121,16 +165,20 @@ function openSegment(db: DatabaseSync): Segment | null {
   const r = db
     .prepare(`SELECT ${SEGMENT_COLUMNS} FROM projection_segments WHERE ended_at IS NULL ORDER BY id DESC LIMIT 1`)
     .get() as SegmentRow | undefined;
-  return r ? { id: num(r.id), start: num(r.started_at), end: null, rate: rateOf(r.rate_visitors, r.rate_seconds) } : null;
+  return r ? segmentOf(r, null) : null;
 }
 
-/** Opens a new active segment at the CURRENT rate. */
-function insertSegment(db: DatabaseSync, startMs: number): void {
-  db.prepare("INSERT INTO projection_segments (started_at, ended_at, rate_visitors, rate_seconds) VALUES (?, NULL, ?, ?)").run(
-    startMs,
-    CURRENT_RATE.visitors,
-    CURRENT_RATE.seconds,
-  );
+/** Opens a new active segment at the rate the schedule assigns to `startMs` (or `rate`). */
+function insertSegment(db: DatabaseSync, startMs: number, rate: Rate = scheduledRate(startMs)): number {
+  const res = db
+    .prepare("INSERT INTO projection_segments (started_at, ended_at, rate_visitors, rate_seconds) VALUES (?, NULL, ?, ?)")
+    .run(startMs, rate.visitors, rate.seconds);
+  return Number(res.lastInsertRowid);
+}
+
+/** True when the open segment must change rate at a schedule switch at or before `nowMs`. */
+function needsScheduleSplit(open: Segment, nowMs: number): boolean {
+  return open.scheduled && scheduleSplits(open.start, open.rate, nowMs).length > 0;
 }
 
 function lastSeen(db: DatabaseSync): number | null {
@@ -146,16 +194,19 @@ function setLastSeen(db: DatabaseSync, t: number): void {
 
 /**
  * Records that the system is alive at `nowMs`. If the active session was not seen for
- * longer than GAP_MS (system was down), the gap is excluded from active time. If the
- * active segment was recorded at a different rate than CURRENT_RATE (the code was
- * updated while a session was running), it is closed here and a new segment continues
- * at the current rate, so the old rate applies exactly up to this boundary.
+ * longer than GAP_MS (system was down), the gap is excluded from active time.
+ *
+ * A running segment recorded under the schedule is split exactly at 11:00 IST (to
+ * CURRENT_RATE) and at IST midnight (back to EARLY_RATE). A running segment recorded
+ * at any other rate (unversioned history, or an earlier version's rate: the code was
+ * updated while a session was running) is closed here and continues at the scheduled
+ * rate, so its own rate applies exactly up to this boundary.
  */
 export function touchProjection(db: DatabaseSync, nowMs: number): void {
   const open = openSegment(db);
   // Most worker heartbeats need no write. Delayed requests must not move the
   // persisted activity timestamp backwards either.
-  if (open && sameRate(open.rate, CURRENT_RATE) && nowMs - (lastSeen(db) ?? open.start) < TOUCH_WRITE_MS) return;
+  if (open && open.scheduled && !needsScheduleSplit(open, nowMs) && nowMs - (lastSeen(db) ?? open.start) < TOUCH_WRITE_MS) return;
 
   // Lock BEFORE checking for an open session: Next.js processes/connections can
   // race even though DatabaseSync calls within a single process are synchronous.
@@ -172,7 +223,15 @@ export function touchProjection(db: DatabaseSync, nowMs: number): void {
       db.prepare("UPDATE projection_segments SET ended_at = ? WHERE id = ?").run(Math.max(seen, current.start), current.id);
       insertSegment(db, nowMs);
       setLastSeen(db, nowMs);
-    } else if (!sameRate(current.rate, CURRENT_RATE)) {
+    } else if (needsScheduleSplit(current, nowMs)) {
+      // 11:00 or midnight passed during a live session: split exactly at each switch.
+      let id = current.id;
+      for (const split of scheduleSplits(current.start, current.rate, nowMs)) {
+        db.prepare("UPDATE projection_segments SET ended_at = ? WHERE id = ?").run(split.at, id);
+        id = insertSegment(db, split.at, split.rate);
+      }
+      if (seen === null || nowMs > seen) setLastSeen(db, nowMs);
+    } else if (!current.scheduled) {
       // Rate boundary inside a live session; never earlier than what is already
       // recorded, so a delayed request cannot move past time to the new rate.
       const boundary = Math.max(nowMs, seen ?? current.start, current.start);
@@ -193,12 +252,23 @@ export function touchProjection(db: DatabaseSync, nowMs: number): void {
 function segments(db: DatabaseSync, nowMs: number): Segment[] {
   const rows = db.prepare(`SELECT ${SEGMENT_COLUMNS} FROM projection_segments ORDER BY started_at, id`).all() as SegmentRow[];
   const seen = lastSeen(db);
-  return rows.map((r) => {
+  return rows.flatMap((r) => {
     const start = num(r.started_at);
     let end: number;
     if (r.ended_at != null) end = num(r.ended_at);
     else end = nowMs - (seen ?? start) > GAP_MS ? Math.max(seen ?? start, start) : nowMs;
-    return { id: num(r.id), start, end: Math.max(start, end), rate: rateOf(r.rate_visitors, r.rate_seconds) };
+    const seg = segmentOf(r, Math.max(start, end));
+    if (!seg.scheduled) return [seg];
+    // A live segment past 11:00 or midnight is valued as split even before the next
+    // touch stores the split (closed segments were already split when stored).
+    const pieces: Segment[] = [];
+    let piece = seg;
+    for (const split of scheduleSplits(seg.start, seg.rate, seg.end ?? seg.start)) {
+      pieces.push({ ...piece, end: split.at });
+      piece = { ...piece, start: split.at, rate: split.rate };
+    }
+    pieces.push(piece);
+    return pieces;
   });
 }
 

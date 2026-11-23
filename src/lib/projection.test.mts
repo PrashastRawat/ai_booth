@@ -8,7 +8,7 @@ import { Worker } from "node:worker_threads";
 import { initSchema } from "./db.ts";
 import { parseEventScope } from "./time.ts";
 import { visitorSummary } from "./visitors.ts";
-import { CURRENT_RATE, GAP_MS, LEGACY_RATE, projectedIncrement, projectionSummary, touchProjection } from "./projection.ts";
+import { CURRENT_RATE, GAP_MS, LEGACY_RATE, projectedIncrement, projectionSummary, scheduledRate, touchProjection } from "./projection.ts";
 
 const OPEN = parseEventScope(null, null);
 const MIN = 60_000;
@@ -37,7 +37,7 @@ const cur = (seconds: number) => Math.floor((seconds * 6500) / 3600);
 /** Pre-versioning rate, exactly as it was displayed: 2,000 per 3,600 active seconds. */
 const legacy = (seconds: number) => Math.floor((seconds * 2000) / 3600);
 
-const T0 = ist(2026, 11, 14, 10, 0);
+const T0 = ist(2026, 11, 14, 11, 0); // from 11:00 IST new activity runs at CURRENT_RATE
 const additionalToday = (db: DatabaseSync, now: number) => projectionSummary(db, now, OPEN).additionalToday;
 const segmentRows = (db: DatabaseSync) =>
   db.prepare("SELECT id, started_at, ended_at, rate_visitors, rate_seconds FROM projection_segments ORDER BY id").all() as {
@@ -274,14 +274,15 @@ test("projection does not increase while the system is stopped", () => {
 test("overnight shutdown contributes zero at the new rate", () => {
   const db = memoryDb();
   const day1 = ist(2026, 11, 22, 9);
-  runAlive(db, day1, day1 + 9 * H); // 09:00-18:00
+  runAlive(db, day1, day1 + 9 * H); // 09:00-18:00: 2 h at 2,000/h + 7 h at 6,500/h
   for (const t of [day1 + 9 * H + 3 * MIN, ist(2026, 11, 23, 0), ist(2026, 11, 23, 8, 59)]) {
-    assert.equal(projectionSummary(db, t, OPEN).additionalTotal, 58500);
+    assert.equal(projectionSummary(db, t, OPEN).additionalTotal, 4000 + 45500);
   }
   const day2 = ist(2026, 11, 23, 9);
   touchProjection(db, day2);
   const s = projectionSummary(db, day2, OPEN);
-  assert.deepEqual([s.additionalToday, s.additionalTotal, segmentRows(db).length], [0, 58500, 2]);
+  // Day 1 is stored as two segments (split at 11:00); day 2 opens one.
+  assert.deepEqual([s.additionalToday, s.additionalTotal, segmentRows(db).length], [0, 49500, 3]);
 });
 
 test("activity continues past nine hours without a timer or cap", () => {
@@ -297,7 +298,8 @@ test("IST midnight resets today's projection; total keeps both days", () => {
   const start = ist(2026, 11, 14, 23, 30);
   runAlive(db, start, start + H); // 23:30 -> 00:30 IST
   const s = projectionSummary(db, start + H, OPEN);
-  assert.deepEqual([s.additionalToday, s.additionalTotal], [3250, 6500]); // each day floored separately
+  // 23:30-00:00 at 6,500/h; after midnight it is before 11:00 again, so 2,000/h.
+  assert.deepEqual([s.additionalToday, s.additionalTotal], [1000, 3250 + 1000]); // each day floored separately
   const before = projectionSummary(db, start + 29 * MIN, OPEN);
   assert.equal(before.additionalToday, cur(29 * 60));
   const midnight = projectionSummary(db, start + 30 * MIN, OPEN);
@@ -308,12 +310,12 @@ test("total accumulates across days and respects the event scope", () => {
   const db = memoryDb();
   for (const d of [13, 14, 15]) {
     const s = ist(2026, 11, d, 10, 0);
-    runAlive(db, s, s + 2 * H); // each day: 2 h alive, then silence until the next day
+    runAlive(db, s, s + 2 * H); // each day 10:00-12:00: 1 h at 2,000/h + 1 h at 6,500/h
   }
   const now = ist(2026, 11, 15, 18, 0);
-  assert.equal(projectionSummary(db, now, OPEN).additionalTotal, 3 * 13000);
-  assert.equal(projectionSummary(db, now, OPEN).additionalToday, 13000);
-  assert.equal(projectionSummary(db, now, parseEventScope("2026-11-14", null)).additionalTotal, 2 * 13000);
+  assert.equal(projectionSummary(db, now, OPEN).additionalTotal, 3 * 8500);
+  assert.equal(projectionSummary(db, now, OPEN).additionalToday, 8500);
+  assert.equal(projectionSummary(db, now, parseEventScope("2026-11-14", null)).additionalTotal, 2 * 8500);
 });
 
 test("overlapping legacy segments are merged, never counted twice (legacy rate unchanged)", () => {
@@ -372,12 +374,12 @@ test("migration: an old-schema database gains rate columns; no row is rewritten;
 
 test("activation while a legacy session is live: split at the boundary, history unchanged", () => {
   const db = legacySchemaDb();
-  const start = ist(2026, 11, 22, 9);
+  const start = ist(2026, 11, 22, 11);
   db.prepare("INSERT INTO projection_segments (started_at, ended_at) VALUES (?, NULL)").run(start);
-  db.prepare("INSERT INTO projection_state (id, last_seen_at) VALUES (1, ?)").run(start + H - MIN); // old code last seen 09:59
+  db.prepare("INSERT INTO projection_state (id, last_seen_at) VALUES (1, ?)").run(start + H - MIN); // old code last seen 11:59
   initSchema(db); // new code starts (restart took under 2 minutes)
 
-  const boundary = start + H; // first touch by the new code at 10:00
+  const boundary = start + H; // first touch by the new code at 12:00
   touchProjection(db, boundary);
   const rows = segmentRows(db);
   assert.equal(rows.length, 2);
@@ -401,10 +403,11 @@ test("activation after an overnight stop: the stale legacy session closes at its
   assert.equal(history, 18000);
   touchProjection(db, ist(2026, 11, 22, 9));
   const rows = segmentRows(db);
-  assert.deepEqual([rows[0].ended_at, rows[1].started_at, rows[1].rate_visitors], [start + 9 * H, ist(2026, 11, 22, 9), 6500]);
+  assert.deepEqual([rows[0].ended_at, rows[1].started_at, rows[1].rate_visitors], [start + 9 * H, ist(2026, 11, 22, 9), 2000]); // before 11:00
   runAlive(db, ist(2026, 11, 22, 9), ist(2026, 11, 22, 13, 30));
   const s = projectionSummary(db, ist(2026, 11, 22, 13, 30), OPEN);
-  assert.deepEqual([s.additionalToday, s.additionalTotal], [29250, 18000 + 29250]); // 4.5 h at 6,500/h
+  // 09:00-11:00 at 2,000/h + 11:00-13:30 at 6,500/h
+  assert.deepEqual([s.additionalToday, s.additionalTotal], [4000 + 16250, 18000 + 4000 + 16250]);
 });
 
 test("a delayed request cannot move already-recorded legacy time to the new rate", () => {
@@ -457,8 +460,8 @@ test("upgrading a live 5,500/hour session to 6,500/hour: split at the boundary, 
     // Earlier history: unversioned 2,000/h day, then a 5,500/h hour recorded by the previous build.
     const ins = db.prepare("INSERT INTO projection_segments (started_at, ended_at, rate_visitors, rate_seconds) VALUES (?, ?, ?, ?)");
     ins.run(ist(2026, 11, 21, 9), ist(2026, 11, 21, 18), null, null); // 9 h legacy = 18,000
-    // Live session of the 5,500/h build since 09:00 today, last seen 09:59.
-    const start = ist(2026, 11, 22, 9);
+    // Live session of the 5,500/h build since 11:00 today, last seen 11:59.
+    const start = ist(2026, 11, 22, 11);
     db.prepare("INSERT INTO projection_segments (started_at, rate_visitors, rate_seconds) VALUES (?, 5500, 3600)").run(start);
     db.prepare("INSERT INTO projection_state (id, last_seen_at) VALUES (1, ?)").run(start + H - MIN);
     const boundary = start + H;
@@ -491,6 +494,56 @@ test("upgrading a live 5,500/hour session to 6,500/hour: split at the boundary, 
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }
+});
+
+// ---- 11:00 pace switch: 2,000/h before 11:00 IST, 6,500/h from 11:00 ----
+
+test("opening at 10:30: first 30 minutes at 2,000/h, then 6,500/h; split stored exactly at 11:00", () => {
+  const db = memoryDb();
+  const open = ist(2026, 11, 24, 10, 30);
+  const switchAt = ist(2026, 11, 24, 11);
+  runAlive(db, open, switchAt);
+  assert.equal(additionalToday(db, switchAt), 1000, "30 min at 2,000/h");
+  runAlive(db, switchAt, switchAt + H);
+  assert.equal(additionalToday(db, switchAt + H), 1000 + 6500);
+  const rows = segmentRows(db);
+  assert.deepEqual(
+    rows.map((r) => [r.started_at, r.ended_at, r.rate_visitors]),
+    [[open, switchAt, 2000], [switchAt, null, 6500]],
+  );
+  assert.equal(scheduledRate(switchAt - 1).visitors, 2000);
+  assert.equal(scheduledRate(switchAt).visitors, 6500);
+});
+
+test("a read just after 11:00, before the next heartbeat, already uses 6,500/h", () => {
+  const db = memoryDb();
+  const switchAt = ist(2026, 11, 24, 11);
+  runAlive(db, switchAt - 30 * MIN, switchAt - 30_000); // last heartbeat 10:59:30
+  const s = projectionSummary(db, switchAt + 60_000, OPEN); // 11:01, still within the 2-min cutoff
+  assert.equal(s.additionalToday, Math.floor(1000 + (60 * 6500) / 3600), "10:30-11:00 at 2,000/h + 60 s at 6,500/h");
+  assert.equal(segmentRows(db).length, 1, "reads never write");
+});
+
+test("opening after 11:00 runs at 6,500/h from the start", () => {
+  const db = memoryDb();
+  const open = ist(2026, 11, 24, 11, 15);
+  runAlive(db, open, open + 30 * MIN);
+  assert.equal(additionalToday(db, open + 30 * MIN), 3250);
+  assert.equal(segmentRows(db)[0].rate_visitors, 6500);
+});
+
+test("the 11:00 switch never revalues unversioned or older-rate sessions", () => {
+  const db = legacySchemaDb();
+  const start = ist(2026, 11, 24, 10);
+  db.prepare("INSERT INTO projection_segments (started_at, ended_at) VALUES (?, NULL)").run(start); // unversioned, live
+  db.prepare("INSERT INTO projection_state (id, last_seen_at) VALUES (1, ?)").run(start + H + 15_000); // seen 11:00:15
+  initSchema(db);
+  const upgradeAt = start + H + 45_000; // new code's first touch at 11:00:45
+  touchProjection(db, upgradeAt);
+  const rows = segmentRows(db);
+  assert.deepEqual([rows[0].ended_at, rows[0].rate_visitors], [upgradeAt, null], "legacy rate applies up to the upgrade, not cut at 11:00");
+  assert.deepEqual([rows[1].started_at, rows[1].rate_visitors], [upgradeAt, 6500]);
+  assert.equal(additionalToday(db, upgradeAt), Math.floor((3645 * 2000) / 3600));
 });
 
 test("a day with two rates is floored once, from exact fractions", () => {

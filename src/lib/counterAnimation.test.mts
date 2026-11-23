@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { ANIMATION, CounterAnimator, nextDelay, reconcile, stepOnce, type Counts } from "./counterAnimation.ts";
+import { ANIMATION, CounterAnimator, advanceBy, nextTickDelay, paceFromActivity, reconcile, tickAmount, type Counts } from "./counterAnimation.ts";
 import { odometerDigits, rollWheel, STRIP_LENGTH } from "./odometerWheel.ts";
 
 /** Deterministic pseudo-random numbers (mulberry32). */
@@ -60,14 +60,33 @@ function harness(seed = 7) {
 
 const C = (today: number, total: number): Counts => ({ today, total });
 
-/** Every displayed transition after the first is +0/+1 per counter (or an allowed snap). */
-function assertUnitSteps(shown: { v: Counts }[], from = 1) {
-  for (let i = Math.max(1, from); i < shown.length; i++) {
-    const a = shown[i - 1].v;
-    const b = shown[i].v;
-    assert.ok(b.today - a.today >= 0 && b.today - a.today <= 1, `today ${a.today} -> ${b.today}`);
-    assert.ok(b.total - a.total >= 0 && b.total - a.total <= 1, `total ${a.total} -> ${b.total}`);
+/** Gaps between consecutive displayed changes after the first (ms). */
+const gaps = (shown: { at: number }[]) => shown.slice(1).map((s, i) => s.at - shown[i].at);
+
+/** Feeds one poll every 30 s at `perHour` and checks the display after each interval. */
+function runPolls(seed: number, perHour: number, polls: number) {
+  const h = harness(seed);
+  h.anim.setTarget(C(12_400, 50_000));
+  let previous = 0;
+  const jumps: number[] = [];
+  for (let poll = 1; poll <= polls; poll++) {
+    const projected = Math.floor((poll * 30 * perHour) / 3600);
+    const target = C(12_400 + projected, 50_000 + projected);
+    const from = h.shown.length;
+    h.anim.setTarget(target);
+    assert.equal(h.shown.length, from, "a new snapshot never changes the display at once");
+    h.advance(30_000);
+    assert.deepEqual(h.anim.value, target, `seed ${seed}, poll ${poll}: increase fully shown before the next poll`);
+    let last = h.shown[from - 1].v;
+    for (const { v } of h.shown.slice(from)) {
+      assert.ok(v.today <= target.today && v.total <= target.total, "never above this poll's target");
+      assert.equal(v.total - v.today, 37_600, "both counters change together");
+      jumps.push(v.today - last.today);
+      last = v;
+    }
+    previous = projected;
   }
+  return { h, previous, jumps };
 }
 
 test("first value (page load / refresh) is shown directly, not replayed from zero", () => {
@@ -77,138 +96,76 @@ test("first value (page load / refresh) is shown directly, not replayed from zer
   assert.equal(h.pending(), 0);
 });
 
-test("12,400 -> 12,450 passes through every integer, both counters together, within one poll", () => {
-  const h = harness();
-  h.anim.setTarget(C(12_400, 50_000));
-  h.anim.setTarget(C(12_450, 50_050));
-  h.advance(30_000);
-  const todays = h.shown.map((s) => s.v.today);
-  assert.deepEqual(todays, Array.from({ length: 51 }, (_, i) => 12_400 + i));
-  for (const s of h.shown) assert.equal(s.v.total - s.v.today, 37_600, "same snapshot, same step");
-  assert.ok(h.shown[h.shown.length - 1].at <= 30_000, "finishes before the next poll");
-});
-
-test("small camera-only deltas spread steps out with variation, never above target", () => {
-  const h = harness(3);
-  h.anim.setTarget(C(1000, 9000));
-  let target = C(1000, 9000);
-  for (let poll = 0; poll < 40; poll++) {
-    target = C(target.today + 5, target.total + 5);
-    h.anim.setTarget(target);
-    h.advance(30_000);
-    for (const s of h.shown) assert.ok(s.v.today <= target.today && s.v.total <= target.total);
-  }
-  assert.deepEqual(h.shown[h.shown.length - 1].v, target);
-  assertUnitSteps(h.shown);
-  const gaps = h.shown.slice(1).map((s, i) => s.at - h.shown[i].at).filter((g) => g < 30_000);
-  assert.ok(new Set(gaps).size > 20, "timing varies");
-  assert.ok(gaps.some((g) => g < ANIMATION.minStepMs * 1.31), "occasional quick bursts");
-  assert.ok(gaps.some((g) => g > 4_000), "unhurried steps at live pace");
-});
-
-test("6,500/hour: both counters sustain 54-55 consecutive increments every 30 s for an hour", () => {
+test("6,500/hour: numbers change every 3-5 s, in varying small amounts, and keep up for an hour", () => {
   for (let seed = 1; seed <= 12; seed++) {
-    const h = harness(seed);
-    h.anim.setTarget(C(12_400, 50_000));
-    let previous = 0;
-    for (let poll = 1; poll <= 120; poll++) {
-      const projected = Math.floor((poll * 30 * 6500) / 3600);
-      const target = C(12_400 + projected, 50_000 + projected);
-      const from = h.shown.length;
-      h.anim.setTarget(target);
-      h.advance(30_000);
-      const steps = h.shown.slice(from);
-      assert.equal(steps.length, projected - previous, `seed ${seed}, poll ${poll}: no skipped integers`);
-      assert.deepEqual(h.anim.value, target, `seed ${seed}, poll ${poll}: no growing backlog`);
-      assert.equal(h.pending(), 0, "caught up before the next poll");
-      for (const { v } of steps) {
-        assert.ok(v.today <= target.today && v.total <= target.total, "never above this poll's target");
-        assert.equal(v.total - v.today, 37_600, "both odometers advance together");
-      }
-      previous = projected;
-    }
+    const { h, previous, jumps } = runPolls(seed, 6500, 120);
     assert.equal(previous, 6500);
-    assertUnitSteps(h.shown);
+    for (const g of gaps(h.shown)) assert.ok(g >= 3_000 && g <= 5_000, `seed ${seed}: change after ${g} ms`);
+    assert.ok(jumps.every((j) => j >= 1 && j <= 20), `seed ${seed}: changes stay small (max ${Math.max(...jumps)})`);
+    assert.ok(new Set(jumps).size >= 5, "amounts vary naturally");
+    assert.ok(new Set(gaps(h.shown)).size > 50, "timing varies naturally");
   }
 });
 
-test("one missed poll and extra camera entries catch up through +1 steps before the next poll", () => {
+test("2,000/hour (before 11:00): small changes of a few visitors every 3-5 s", () => {
+  for (let seed = 1; seed <= 6; seed++) {
+    const { h, previous, jumps } = runPolls(seed, 2000, 60);
+    assert.equal(previous, 1000);
+    for (const g of gaps(h.shown)) assert.ok(g >= 3_000, `change after ${g} ms`);
+    assert.ok(jumps.every((j) => j >= 1 && j <= 8), `max ${Math.max(...jumps)}`);
+  }
+});
+
+test("a small increase is shown as several small changes, never faster than every 3 s", () => {
   const h = harness();
-  h.anim.setTarget(C(100, 1000));
-  let target = C(100, 1000);
-  for (const increment of [54, 108, 55, 61, 54]) {
-    target = C(target.today + increment, target.total + increment);
-    const from = h.shown.length;
-    h.anim.setTarget(target);
-    h.advance(30_000);
-    assert.deepEqual(h.anim.value, target);
-    assert.equal(h.shown.length - from, increment);
-    assert.ok(h.shown.slice(from).every(({ v }) => v.today <= target.today && v.total <= target.total));
-  }
-  assertUnitSteps(h.shown);
-});
-
-test("bursts are 2-4 rapid +1 steps, never a jump", () => {
-  for (let seed = 1; seed < 30; seed++) {
-    const pacer = { burstLeft: 0 };
-    const r = rng(seed);
-    let run = 0;
-    for (let i = 0; i < 2000; i++) {
-      const d = nextDelay(50, 25_000, r, pacer);
-      assert.ok(d >= ANIMATION.minStepMs, "never faster than the minimum step");
-      if (d <= ANIMATION.minStepMs * 1.3) run++;
-      else run = 0;
-    }
-    assert.ok(run < 50);
-  }
-});
-
-test("a random pause reserves enough time for every remaining step before the deadline", () => {
-  for (const remaining of [1, 2, 54, ANIMATION.maxAnimatedBacklog]) {
-    const timeLeft = remaining * ANIMATION.minStepMs + 500;
-    // No burst, maximum ordinary variation, then an extra pause.
-    const values = [1, 1, 0];
-    const delay = nextDelay(remaining, timeLeft, () => values.shift() ?? 0, { burstLeft: 0 });
-    assert.ok(delay + (remaining - 1) * ANIMATION.minStepMs <= timeLeft);
-  }
+  h.anim.setTarget(C(10, 20));
+  h.anim.setTarget(C(14, 24));
+  for (let i = 0; i < 50; i++) h.anim.setTarget(C(14, 24)); // repeated identical polls change nothing
+  h.advance(60_000);
+  assert.deepEqual(h.anim.value, C(14, 24));
+  assert.ok(h.shown.length >= 3, "spread over several changes");
+  for (const g of gaps(h.shown)) assert.ok(g >= 3_000);
 });
 
 test("an API update during an animation moves the target; no restart, no duplicate delta", () => {
   const h = harness();
   h.anim.setTarget(C(100, 1000));
-  h.anim.setTarget(C(110, 1010));
-  h.advance(8_000); // part-way
-  const mid = h.shown[h.shown.length - 1].v;
-  assert.ok(mid.today > 100 && mid.today < 110);
-  h.anim.setTarget(C(115, 1015)); // newer snapshot arrives mid-animation
-  assert.deepEqual(h.shown[h.shown.length - 1].v, mid, "no jump on update");
+  h.anim.setTarget(C(150, 1050));
+  h.advance(12_000); // part-way
+  const mid = h.anim.value!;
+  assert.ok(mid.today > 100 && mid.today < 150);
+  h.anim.setTarget(C(160, 1060)); // newer snapshot arrives mid-animation
+  assert.deepEqual(h.anim.value, mid, "no jump on update");
   h.advance(60_000);
-  assert.deepEqual(h.shown[h.shown.length - 1].v, C(115, 1015), "stops at the latest target, never 125");
-  assertUnitSteps(h.shown);
+  assert.deepEqual(h.anim.value, C(160, 1060), "stops at the latest target, never above it");
+  for (const g of gaps(h.shown)) assert.ok(g >= 3_000);
 });
 
-test("multiple rapid identical polls change nothing", () => {
+test("one missed poll and extra camera entries still catch up by the next poll", () => {
   const h = harness();
-  h.anim.setTarget(C(10, 20));
-  h.anim.setTarget(C(14, 24));
-  for (let i = 0; i < 50; i++) h.anim.setTarget(C(14, 24));
-  h.advance(60_000);
-  assert.deepEqual(h.shown.map((s) => s.v.today), [10, 11, 12, 13, 14]);
+  h.anim.setTarget(C(100, 1000));
+  let target = C(100, 1000);
+  for (const increment of [54, 108, 55, 61, 54]) {
+    target = C(target.today + increment, target.total + increment);
+    h.anim.setTarget(target);
+    h.advance(30_000);
+    assert.deepEqual(h.anim.value, target);
+  }
 });
 
 test("large backlog (outage / restart) synchronises directly instead of replaying", () => {
   const h = harness();
   h.anim.setTarget(C(500, 5000));
-  h.anim.setTarget(C(500 + ANIMATION.maxAnimatedBacklog + 1, 5000 + ANIMATION.maxAnimatedBacklog + 1));
-  assert.deepEqual(h.shown[h.shown.length - 1].v, C(500 + ANIMATION.maxAnimatedBacklog + 1, 5000 + ANIMATION.maxAnimatedBacklog + 1));
+  const far = ANIMATION.maxAnimatedBacklog + 1;
+  h.anim.setTarget(C(500 + far, 5000 + far));
+  assert.deepEqual(h.anim.value, C(500 + far, 5000 + far));
   assert.equal(h.pending(), 0);
   // The largest animated backlog still finishes within one poll interval.
   const h2 = harness();
   h2.anim.setTarget(C(0, 0));
   h2.anim.setTarget(C(ANIMATION.maxAnimatedBacklog, ANIMATION.maxAnimatedBacklog));
   h2.advance(30_000);
-  assert.equal(h2.shown[h2.shown.length - 1].v.today, ANIMATION.maxAnimatedBacklog);
-  assertUnitSteps(h2.shown);
+  assert.equal(h2.anim.value!.today, ANIMATION.maxAnimatedBacklog);
 });
 
 test("hidden tab: no replay; on return it shows the latest snapshot at once", () => {
@@ -219,40 +176,122 @@ test("hidden tab: no replay; on return it shows the latest snapshot at once", ()
   h.anim.setTarget(C(180, 1080));
   assert.equal(h.pending(), 0, "no timers while hidden");
   h.setHidden(false);
-  assert.deepEqual(h.shown[h.shown.length - 1].v, C(180, 1080));
-  h.anim.setTarget(C(183, 1083));
+  assert.deepEqual(h.anim.value, C(180, 1080));
+  h.anim.setTarget(C(190, 1090));
   h.advance(30_000);
-  assert.deepEqual(h.shown.slice(-3).map((s) => s.v.today), [181, 182, 183]);
+  assert.deepEqual(h.anim.value, C(190, 1090));
 });
 
-test("hidden mid-animation: the pending step syncs instead of continuing to replay", () => {
+test("hidden mid-animation: the pending change syncs instead of continuing to replay", () => {
   const h = harness();
   h.anim.setTarget(C(0, 0));
   h.anim.setTarget(C(20, 20));
-  h.advance(3_000);
+  h.advance(4_000);
   h.setHidden(true);
-  assert.deepEqual(h.shown[h.shown.length - 1].v, C(20, 20));
+  assert.deepEqual(h.anim.value, C(20, 20));
   assert.equal(h.pending(), 0);
 });
 
-test("IST midnight: today resets directly while total keeps increasing by +1", () => {
+test("IST midnight: today resets directly while total keeps increasing", () => {
   const h = harness();
   h.anim.setTarget(C(18_541, 101_220));
   h.anim.setTarget(C(3, 101_226)); // first poll after midnight
-  const first = h.shown[h.shown.length - 1].v;
+  const first = h.anim.value!;
   assert.equal(first.today, 3, "today drops at once, never animated backwards");
   assert.equal(first.total, 101_220, "total does not jump");
   h.advance(30_000);
-  assert.deepEqual(h.shown[h.shown.length - 1].v, C(3, 101_226));
-  assertUnitSteps(h.shown, 2);
+  assert.deepEqual(h.anim.value, C(3, 101_226));
   assert.ok(h.shown.every((s) => s.v.total >= 101_220), "total never decreases");
 });
 
-test("reconcile and stepOnce never overshoot", () => {
+test("reconcile, advanceBy and tickAmount never overshoot", () => {
   assert.deepEqual(reconcile(null, C(5, 9)), C(5, 9));
   assert.deepEqual(reconcile(C(10, 10), C(4, 12)), C(4, 10));
-  assert.deepEqual(stepOnce(C(4, 10), C(4, 12)), C(4, 11));
-  assert.deepEqual(stepOnce(C(4, 12), C(4, 12)), C(4, 12));
+  assert.deepEqual(advanceBy(C(4, 10), C(4, 12), 7), C(4, 12));
+  assert.deepEqual(advanceBy(C(4, 10), C(9, 30), 3), C(7, 13));
+  const r = rng(5);
+  for (let i = 0; i < 1000; i++) {
+    const remaining = 1 + Math.floor(r() * 200);
+    const a = tickAmount(remaining, r() * 30_000, r);
+    assert.ok(a >= 1 && a <= remaining);
+  }
+  assert.equal(tickAmount(17, 4_999, r), 17, "last change before the deadline shows the rest");
+  for (let i = 0; i < 1000; i++) {
+    const d = nextTickDelay(r);
+    assert.ok(d >= 3_000 && d <= 5_000);
+  }
+});
+
+// ---- Camera activity sets the rhythm; the hourly total stays 6,500 ----
+
+/** One hour of 30 s polls at 6,500/h with the given camera activity per poll. */
+function runWithActivity(seed: number, activity: (poll: number) => number, polls = 120) {
+  const h = harness(seed);
+  h.anim.setActivity(activity(0));
+  h.anim.setTarget(C(10_000, 80_000));
+  const lag: number[] = [];
+  let target = C(10_000, 80_000);
+  for (let poll = 1; poll <= polls; poll++) {
+    const projected = Math.floor((poll * 30 * 6500) / 3600);
+    target = C(10_000 + projected, 80_000 + projected);
+    h.anim.setActivity(activity(poll));
+    h.anim.setTarget(target);
+    h.advance(30_000);
+    const v = h.anim.value!;
+    assert.ok(v.today <= target.today && v.total <= target.total, "never above the API");
+    assert.equal(v.total - v.today, 70_000, "both counters together");
+    lag.push(target.today - v.today);
+  }
+  return { h, lag, target };
+}
+
+test("paceFromActivity: fewer detections than usual slow down, more speed up, bounded", () => {
+  assert.equal(paceFromActivity(40, 40), 1);
+  assert.ok(paceFromActivity(5, 40) < 0.5);
+  assert.ok(paceFromActivity(120, 40) > 1.5);
+  assert.equal(paceFromActivity(0, 1000), ANIMATION.minPace);
+  assert.equal(paceFromActivity(5000, 10), ANIMATION.maxPace);
+  assert.equal(paceFromActivity(0, 0), 1, "no camera data: usual pace");
+});
+
+test("quiet cameras: longer pauses and the display trails; busy cameras: it catches up", () => {
+  for (let seed = 1; seed <= 8; seed++) {
+    // 20 min usual, 20 min quiet, 20 min busy (camera entries in the last 5 minutes).
+    const act = (p: number) => (p <= 40 ? 40 : p <= 80 ? 4 : 120);
+    const { h, lag } = runWithActivity(seed, act);
+    const gapsIn = (from: number, to: number) => {
+      const s = h.shown.filter((x) => x.at > from * 30_000 && x.at <= to * 30_000);
+      return gaps(s);
+    };
+    const avg = (xs: number[]) => xs.reduce((a, b) => a + b, 0) / xs.length;
+    const usual = gapsIn(5, 40);
+    const quiet = gapsIn(45, 80);
+    assert.ok(avg(quiet) > avg(usual) * 1.2, `seed ${seed}: quieter means slower (${avg(usual)} -> ${avg(quiet)})`);
+    assert.ok(quiet.some((g) => g > 5_000), "pauses while quiet");
+    assert.ok(Math.max(...lag.slice(45, 80)) > Math.max(...lag.slice(5, 40)), "display trails while quiet");
+    assert.ok(Math.max(...lag) < ANIMATION.maxAnimatedBacklog, "bounded: never so far behind that it has to jump");
+    assert.equal(lag[lag.length - 1], 0, "caught up once busy");
+    for (const g of gaps(h.shown)) assert.ok(g >= 3_000, "never faster than every 3 s");
+  }
+});
+
+test("over the hour the display reaches exactly the API's 6,500, whatever the activity", () => {
+  for (let seed = 1; seed <= 8; seed++) {
+    const r = rng(seed * 101);
+    let level = 40;
+    const act = () => (level = Math.max(0, Math.min(150, level + Math.round((r() - 0.5) * 30))));
+    const { h, target } = runWithActivity(seed, act);
+    // Let the last increase play out at usual activity (no new API data).
+    h.anim.setActivity(40);
+    h.advance(120_000);
+    assert.deepEqual(h.anim.value, target);
+    assert.equal(target.today - 10_000, 6500, "exactly 6,500 in the hour");
+    let prev = h.shown[0].v.today;
+    for (const { v } of h.shown.slice(1)) {
+      assert.ok(v.today - prev <= 70, `no big jumps (${v.today - prev})`);
+      prev = v.today;
+    }
+  }
 });
 
 // ---- Odometer wheels: +1 steps through carries ----

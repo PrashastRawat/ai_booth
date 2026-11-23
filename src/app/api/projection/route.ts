@@ -1,7 +1,7 @@
 import { NextResponse, connection } from "next/server";
 import { getDb } from "@/lib/db";
 import { eventScopeFromEnv } from "@/lib/visitors";
-import { CURRENT_RATE, LEGACY_RATE, projectionSummary } from "@/lib/projection";
+import { CURRENT_RATE, EARLY_RATE, LEGACY_RATE, PACE_SWITCH_HOUR, projectionSummary } from "@/lib/projection";
 
 // Projection status and audit for the admin dashboard.
 //   GET /api/projection -> status and the stored session segments
@@ -28,7 +28,7 @@ export async function GET() {
       rate: s.rate_visitors === null || s.rate_seconds === null ? null : { visitors: Number(s.rate_visitors), activeSeconds: Number(s.rate_seconds) },
     }));
     return NextResponse.json({
-      note: `Projected visitors are synthetic, not camera-detected: ${((CURRENT_RATE.visitors * 3600) / CURRENT_RATE.seconds).toLocaleString("en-IN")} per active hour for new activity; earlier activity keeps its recorded rate (unversioned sessions: ${LEGACY_RATE.visitors.toLocaleString("en-IN")} per hour). The session is automatic: active while a dashboard or the worker is online.`,
+      note: `Projected visitors are synthetic, not camera-detected: ${((CURRENT_RATE.visitors * 3600) / CURRENT_RATE.seconds).toLocaleString("en-IN")} per active hour for new activity from ${PACE_SWITCH_HOUR}:00 IST (${((EARLY_RATE.visitors * 3600) / EARLY_RATE.seconds).toLocaleString("en-IN")} per active hour before); earlier activity keeps its recorded rate (unversioned sessions: ${LEGACY_RATE.visitors.toLocaleString("en-IN")} per hour). The session is automatic: active while a dashboard or the worker is online.`,
       currentRate: { visitors: CURRENT_RATE.visitors, activeSeconds: CURRENT_RATE.seconds },
       legacyRate: { visitors: LEGACY_RATE.visitors, activeSeconds: LEGACY_RATE.seconds },
       automatic: true,

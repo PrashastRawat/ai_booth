@@ -28,7 +28,8 @@ is authorized by this document; the owner must approve GitHub operations first.
   close a stale open session at its last heartbeat and open a new segment.
 - Unversioned history is interpreted as **2,000/hour**, only if that is confirmed to
   match the PC's history. Stored explicit rates are preserved. New activity records
-  **6,500 per 3,600 active seconds**. No nine-hour timer exists.
+  **2,000 per 3,600 active seconds before 11:00 IST and 6,500 from 11:00 IST**. No
+  nine-hour timer exists.
 
 The helper never calls `getDb()` on the live file. `preflight` and `verify-live` use
 read-only SQLite connections without schema initialization or HTTP requests. `backup`

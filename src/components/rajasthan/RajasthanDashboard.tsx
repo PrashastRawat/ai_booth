@@ -21,6 +21,8 @@ type Stats = {
   serverTime: number;
   /** Camera names whose worker heartbeat is recent. */
   online: string[];
+  /** Real camera entries in the last 5 minutes; sets the display rhythm only. */
+  recentEntries: number | null;
 };
 
 /**
@@ -49,6 +51,7 @@ function useDashboardStats(): Stats | null {
           projectedTodayVisitors?: unknown;
           projectedTotalVisitors?: unknown;
           serverTime?: unknown;
+          last5Minutes?: unknown;
           cameras?: { name?: unknown; online?: unknown }[];
         } = await res.json();
         const projected = typeof data.projectedTodayVisitors === "number" && typeof data.projectedTotalVisitors === "number";
@@ -59,7 +62,8 @@ function useDashboardStats(): Stats | null {
         const online = (Array.isArray(data.cameras) ? data.cameras : [])
           .filter((c) => c?.online === true && typeof c.name === "string")
           .map((c) => c.name as string);
-        setStats({ today, total, projected, serverTime, online });
+        const recentEntries = typeof data.last5Minutes === "number" ? data.last5Minutes : null;
+        setStats({ today, total, projected, serverTime, online, recentEntries });
       } catch {
         // Network error or aborted poll: keep showing the last known values.
       }
@@ -78,11 +82,12 @@ function useDashboardStats(): Stats | null {
 }
 
 /**
- * The numbers the odometers show while they travel, in +1 steps, to the latest
- * /api/stats snapshot (see src/lib/counterAnimation.ts). Display only: the snapshot
- * stays authoritative and nothing above it is ever shown.
+ * The numbers the odometers show while they travel, changing every 3-5 s at a rhythm set
+ * by real camera activity, to the latest /api/stats snapshot (see
+ * src/lib/counterAnimation.ts). Display only: the snapshot stays authoritative and
+ * nothing above it is ever shown.
  */
-function useAnimatedCounts(today: number | null, total: number | null): Counts | null {
+function useAnimatedCounts(stats: Stats | null): Counts | null {
   const [display, setDisplay] = useState<Counts | null>(null);
   const animator = useRef<CounterAnimator | null>(null);
 
@@ -106,16 +111,19 @@ function useAnimatedCounts(today: number | null, total: number | null): Counts |
     };
   }, []);
 
+  // Once per poll: update the camera-activity rhythm, then the target.
   useEffect(() => {
-    if (today !== null && total !== null) animator.current?.setTarget({ today, total });
-  }, [today, total]);
+    if (!stats) return;
+    animator.current?.setActivity(stats.recentEntries);
+    animator.current?.setTarget({ today: stats.today, total: stats.total });
+  }, [stats]);
 
   return display;
 }
 
 export default function RajasthanDashboard({ fontClassName }: { fontClassName?: string }) {
   const stats = useDashboardStats();
-  const shown = useAnimatedCounts(stats?.today ?? null, stats?.total ?? null);
+  const shown = useAnimatedCounts(stats);
 
   return (
     <div className={`rj-root ${fontClassName ?? ""}`}>

@@ -5,42 +5,57 @@
 //
 // Policy:
 //  - First value (page load / refresh): shown directly, never replayed from zero.
-//  - Increase: advanced in consecutive +1 steps, paced to finish before the next poll,
-//    with natural timing variation, occasional short pauses and occasional bursts of
-//    2-4 rapid +1 steps. A step never skips an integer.
+//  - Increase: the counters change once every 3-5 seconds (random), each time by a
+//    varying amount, like people arriving in small groups. The amounts are paced so the
+//    whole increase is shown by the next poll: the display keeps up and never drifts.
+//  - Camera activity sets the rhythm: when the cameras detect fewer people than usual the
+//    display slows down and pauses (trailing the API by a bounded amount); when they
+//    detect more it changes faster and catches up. The API figures, and so the hourly
+//    total, are unaffected: the display only ever moves toward them.
 //  - A newer snapshot during an animation only moves the target; the running cadence
 //    continues from the number on screen, so a delta is never added twice.
 //  - Decrease (IST midnight reset of Today's Visitors, or a correction): shown directly,
 //    never animated backwards.
 //  - Backlog too large to animate within one poll interval (outage, restart, long-hidden
 //    tab), or the tab is hidden: synchronised directly to the latest target.
-//  - Today and Total advance together in the same step, so both stay on one snapshot.
+//  - Today and Total change together, by the same amount, so both stay on one snapshot.
 
 export type Counts = { today: number; total: number };
 
-// Tuned for 6,500 projected visitors per hour: about 54 per 30 s poll (1.81 a second),
-// so a normal poll is spread as ~0.5 s steps over most of the interval and finishes just
-// before the next one: the counter keeps moving without stop-go pauses and no backlog
-// builds up. One missed poll (~108) is still animated, as rapid +1 steps (21.6 s at the
-// fastest pace); a longer gap synchronises.
+// At 6,500 projected visitors per hour about 54 arrive per 30 s poll: 6-8 changes of
+// roughly 4-10 each. Before 11:00 (2,000/hour, ~17 per poll) changes are 1-4. A missed
+// poll is still animated with somewhat larger changes; a longer gap synchronises.
 export const ANIMATION = {
-  /** Spread a backlog over this much of the 30 s poll interval. */
-  budgetMs: 28_000,
-  /** Fastest +1 step; wheel rolls must finish inside this interval. */
-  minStepMs: 200,
-  /** Slowest normal +1 step (only reached when very little arrives, e.g. camera-only counts). */
-  maxStepMs: 7_000,
-  /** Largest backlog animated step by step (140); above it the display synchronises. */
-  maxAnimatedBacklog: Math.floor(28_000 / 200),
-  /** Chance that a step starts a burst of 2-4 rapid steps (needs backlog >= 3). */
-  burstChance: 0.1,
-  /** Chance of a short extra pause before an ordinary step. */
-  pauseChance: 0.08,
+  /** Show each increase within this long after its snapshot (the poll interval). */
+  budgetMs: 30_000,
+  /** Shortest pause between two changes of the counters. */
+  minTickMs: 3_000,
+  /** Longest pause between two changes while there is something to show. */
+  maxTickMs: 5_000,
+  /** Largest backlog animated; above it the display synchronises (~2 min at 6,500/h). */
+  maxAnimatedBacklog: 250,
+  /** Pace range driven by camera activity: quiet slows the display, busy speeds it up. */
+  minPace: 0.4,
+  maxPace: 1.6,
+  /** At the quietest pace, about this share of changes become pauses. */
+  quietPauseShare: 0.5,
+  /** Quiet spells may let the display trail the API by at most this much (~1 min at 6,500/h). */
+  maxTrail: 120,
 } as const;
+
+/**
+ * Display pace from real camera detections: entries in the last 5 minutes compared with
+ * their recent average. 1 = usual, below 1 = quieter (slower, more pauses), above 1 =
+ * busier (faster). Only the rhythm changes; the counters still follow the API exactly.
+ */
+export function paceFromActivity(recent: number, baseline: number): number {
+  const ratio = (Math.max(0, recent) + 1) / (Math.max(0, baseline) + 1);
+  return Math.min(ANIMATION.maxPace, Math.max(ANIMATION.minPace, ratio));
+}
 
 const same = (a: Counts | null, b: Counts | null) => a !== null && b !== null && a.today === b.today && a.total === b.total;
 
-/** Steps still to show before the display reaches the target. */
+/** Increase still to show before the display reaches the target. */
 export function backlog(display: Counts, target: Counts): number {
   return Math.max(0, target.today - display.today, target.total - display.total);
 }
@@ -55,45 +70,33 @@ export function reconcile(display: Counts | null, target: Counts): Counts {
   return backlog(next, target) > ANIMATION.maxAnimatedBacklog ? { ...target } : next;
 }
 
-/** One visual step: +1 on every counter that is below its target. Never overshoots. */
-export function stepOnce(display: Counts, target: Counts): Counts {
+/** Moves each counter up by `amount`, never past its target. */
+export function advanceBy(display: Counts, target: Counts, amount: number): Counts {
   return {
-    today: display.today < target.today ? display.today + 1 : display.today,
-    total: display.total < target.total ? display.total + 1 : display.total,
+    today: Math.min(target.today, display.today + Math.max(0, amount)),
+    total: Math.min(target.total, display.total + Math.max(0, amount)),
   };
 }
 
-export type Pacer = { burstLeft: number };
+/** Random pause before the next change: 3-5 seconds. */
+export function nextTickDelay(rng: () => number): number {
+  const { minTickMs, maxTickMs } = ANIMATION;
+  return Math.round(minTickMs + (maxTickMs - minTickMs) * rng());
+}
 
 /**
- * Delay before the next +1 step, given how many steps remain and how much time is left
- * before the pacing deadline (the next poll). Recomputed every step, so a long pause is
- * made up afterwards; when the time per step gets close to the minimum it switches to
- * plain rapid +1 steps so the backlog always finishes on time.
+ * How much to show at this change, given what remains and the time left before the
+ * pacing deadline. Spread over the changes that still fit, with natural variation;
+ * when no further change fits before the deadline, everything remaining is shown.
  */
-export function nextDelay(remaining: number, timeLeftMs: number, rng: () => number, pacer: Pacer): number {
-  const { minStepMs, maxStepMs, burstChance, pauseChance } = ANIMATION;
-  const perStep = timeLeftMs / Math.max(1, remaining);
-  if (perStep <= minStepMs * 1.5) {
-    pacer.burstLeft = 0;
-    return minStepMs; // catching up: consecutive +1 steps at the fastest pace
-  }
-  const quick = () => Math.round(minStepMs * (1 + 0.3 * rng()));
-  if (pacer.burstLeft > 0) {
-    pacer.burstLeft--;
-    return quick();
-  }
-  if (remaining >= 3 && rng() < burstChance) {
-    pacer.burstLeft = 1 + Math.floor(rng() * 3); // this step plus 1-3 more: a burst of 2-4
-    return quick();
-  }
-  const base = Math.min(maxStepMs, perStep);
-  let delay = base * (0.65 + 0.7 * rng());
-  if (rng() < pauseChance) delay *= 1.6;
-  // A pause, especially on the last step, must not spill into the next poll.
-  // Reserve enough time for every remaining +1 even at the fastest cadence.
-  const latest = Math.max(minStepMs, timeLeftMs - (remaining - 1) * minStepMs);
-  return Math.floor(Math.min(latest, maxStepMs * 1.6, Math.max(minStepMs, delay)));
+export function tickAmount(remaining: number, timeLeftMs: number, rng: () => number): number {
+  if (remaining <= 0) return 0;
+  const ticksLeft = Math.floor(timeLeftMs / ANIMATION.maxTickMs); // further changes that surely fit
+  if (ticksLeft <= 0) return remaining;
+  const share = remaining / (ticksLeft + 1);
+  // Leave at least one for each later change, so the rhythm continues up to the deadline.
+  const most = Math.max(1, remaining - ticksLeft);
+  return Math.max(1, Math.min(most, Math.round(share * (0.6 + 0.8 * rng()))));
 }
 
 export type Scheduler = { set(fn: () => void, ms: number): unknown; clear(handle: unknown): void; now(): number };
@@ -102,9 +105,14 @@ export class CounterAnimator {
   private display: Counts | null = null;
   private target: Counts | null = null;
   private timer: unknown = null;
-  /** The backlog shown so far should be finished by this time (the next poll). */
+  /** The increase should be fully shown by this time (the next poll). */
   private deadline = 0;
-  private readonly pacer: Pacer = { burstLeft: 0 };
+  /** When the display last changed or paused; the next change comes 3-5 s after it. */
+  private lastTick = -Infinity;
+  /** Current display pace from camera activity (1 = usual). */
+  private pace = 1;
+  /** Running average of recent camera detections, for comparison. */
+  private baseline: number | null = null;
   private readonly onChange: (display: Counts) => void;
   private readonly scheduler: Scheduler;
   private readonly isHidden: () => boolean;
@@ -126,12 +134,34 @@ export class CounterAnimator {
     return this.display;
   }
 
+  /**
+   * Real camera entries in the last 5 minutes, sent with each poll. Fewer than usual
+   * slows the display down with pauses; more than usual speeds it up to catch up.
+   */
+  setActivity(recentEntries: number | null): void {
+    if (recentEntries === null || !Number.isFinite(recentEntries)) return;
+    this.baseline = this.baseline === null ? recentEntries : this.baseline * 0.9 + recentEntries * 0.1;
+    this.pace = paceFromActivity(recentEntries, this.baseline);
+  }
+
+  get currentPace(): number {
+    return this.pace;
+  }
+
+  /** The camera pace, except that a display trailing by more than maxTrail is not slowed. */
+  private effectivePace(): number {
+    const behind = this.display && this.target ? backlog(this.display, this.target) : 0;
+    return behind > ANIMATION.maxTrail ? Math.max(1, this.pace) : this.pace;
+  }
+
   /** A new authoritative snapshot. Repeated identical snapshots change nothing. */
   setTarget(target: Counts): void {
     if (same(this.target, target)) return;
     this.target = { ...target };
-    this.deadline = this.scheduler.now() + ANIMATION.budgetMs;
     this.show(this.isHidden() ? { ...target } : reconcile(this.display, target));
+    // Quiet: show this increase more slowly (it may trail a little); busy: catch up sooner.
+    // Once trailing by more than maxTrail, quiet no longer slows it down.
+    this.deadline = this.scheduler.now() + ANIMATION.budgetMs / this.effectivePace();
     this.schedule();
   }
 
@@ -149,6 +179,7 @@ export class CounterAnimator {
   private show(next: Counts): void {
     if (same(this.display, next)) return;
     this.display = next;
+    this.lastTick = this.scheduler.now();
     this.onChange(next);
   }
 
@@ -160,10 +191,10 @@ export class CounterAnimator {
   /** Keeps a running cadence; each tick reads the latest target. */
   private schedule(): void {
     if (this.timer !== null || this.display === null || this.target === null) return;
-    const remaining = backlog(this.display, this.target);
-    if (remaining === 0) return;
-    const timeLeft = this.deadline - this.scheduler.now();
-    this.timer = this.scheduler.set(this.tick, nextDelay(remaining, timeLeft, this.rng, this.pacer));
+    if (backlog(this.display, this.target) === 0) return;
+    // Keep the 3-5 s rhythm across polls: time the next change from the previous one.
+    const due = this.lastTick + nextTickDelay(this.rng);
+    this.timer = this.scheduler.set(this.tick, Math.max(0, due - this.scheduler.now()));
   }
 
   private tick = (): void => {
@@ -173,7 +204,17 @@ export class CounterAnimator {
       this.show({ ...this.target });
       return;
     }
-    this.show(stepOnce(this.display, this.target));
+    const remaining = backlog(this.display, this.target);
+    const timeLeft = this.deadline - this.scheduler.now();
+    // Fewer people detected: some changes become pauses (only while there is time to spare).
+    const pace = this.effectivePace();
+    const pauseChance = pace < 1 ? ((1 - pace) / (1 - ANIMATION.minPace)) * ANIMATION.quietPauseShare : 0;
+    if (timeLeft > 2 * ANIMATION.maxTickMs && this.rng() < pauseChance) {
+      this.lastTick = this.scheduler.now();
+      this.schedule();
+      return;
+    }
+    this.show(advanceBy(this.display, this.target, tickAmount(remaining, timeLeft, this.rng)));
     this.schedule();
   };
 }

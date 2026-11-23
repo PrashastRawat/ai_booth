@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useRef, useState, type CSSProperties } from "react";
-import { ANIMATION } from "@/lib/counterAnimation";
 import { odometerDigits, rollWheel } from "@/lib/odometerWheel";
 
 // Mechanical odometer display. Purely visual: it renders exactly the number it is
@@ -36,10 +35,9 @@ function DigitWheel({ digit }: { digit: number }) {
       void el.offsetHeight;
     }
     posRef.current = move.to;
-    el.style.transition = ""; // back to the stylesheet transition
-    // Finish before even the fastest +1 tick, so a carry never rebases a wheel
-    // mid-roll. Keep the existing mechanical easing and appearance.
-    el.style.transitionDuration = `${ANIMATION.minStepMs * 0.8}ms`;
+    // Back to the stylesheet's 0.9 s mechanical roll: counter changes are at least
+    // ANIMATION.minTickMs (3 s) apart, so a roll always finishes before the next one.
+    el.style.transition = "";
     el.style.transform = shift(move.to);
   }, [digit]);
 

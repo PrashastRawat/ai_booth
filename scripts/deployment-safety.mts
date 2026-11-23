@@ -10,7 +10,7 @@ import { backup, DatabaseSync } from "node:sqlite";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { parseArgs } from "node:util";
 import { initSchema } from "../src/lib/db.ts";
-import { CURRENT_RATE, GAP_MS, initProjectionSchema, projectionSummary, touchProjection } from "../src/lib/projection.ts";
+import { CURRENT_RATE, EARLY_RATE, GAP_MS, initProjectionSchema, projectionSummary, touchProjection } from "../src/lib/projection.ts";
 import { addDays, dayRangeUtc, parseEventScope, zonedDate, type EventScope } from "../src/lib/time.ts";
 
 const LIB = fileURLToPath(new URL("../src/lib/", import.meta.url));
@@ -273,7 +273,8 @@ export async function verifyCopy(b: Baseline, backupFile: string, outputDir: str
     assert.deepEqual(oldRows, recordedRates, "Migration assigned a new rate to historical sessions");
     // Run future activity on a fresh IST day, using an open event scope so an old
     // configured EVENT_END_DATE cannot mask whether the new rate actually works.
-    const boundary = dayRangeUtc(addDays(zonedDate(b.at), 1)).start + 9 * 3_600_000;
+    // 12:00 IST: after the 11:00 pace switch, so the simulated hour runs at CURRENT_RATE.
+    const boundary = dayRangeUtc(addDays(zonedDate(b.at), 1)).start + 12 * 3_600_000;
     const all = parseEventScope(null, null);
     const before = counts(db, boundary, all, "versioned");
     for (let t = boundary; t <= boundary + 3_600_000; t += 30_000) touchProjection(db, t);
@@ -333,7 +334,8 @@ export function verifyLive(b: Baseline, backupFile: string, resultFile: string, 
         assert.deepEqual([newer.rate_visitors, newer.rate_seconds], [r.rate_visitors ?? null, r.rate_seconds ?? null], "Old session was assigned a new rate");
       }
       const maxId = scalar(old, "SELECT COALESCE(MAX(id),0) FROM projection_segments");
-      assert.equal(scalar(live, "SELECT COUNT(*) FROM projection_segments WHERE id > ? AND (started_at < ? OR rate_visitors IS NOT ? OR rate_seconds IS NOT ?)", maxId, b.at, CURRENT_RATE.visitors, CURRENT_RATE.seconds), 0, "Unexpected new activity rate/boundary");
+      // New activity may only use the schedule's two rates (2,000/h before 11:00 IST, CURRENT_RATE after).
+      assert.equal(scalar(live, "SELECT COUNT(*) FROM projection_segments WHERE id > ? AND (started_at < ? OR rate_seconds IS NOT ? OR rate_visitors NOT IN (?, ?))", maxId, b.at, CURRENT_RATE.seconds, CURRENT_RATE.visitors, EARLY_RATE.visitors), 0, "Unexpected new activity rate/boundary");
     }
     const frozen = counts(live, b.at, b.scope, "versioned");
     // New late camera events may belong to an earlier date. All old events are
